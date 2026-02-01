@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>dotnet-CompilerService-618c9581-1945-44b1-ba89-fa0d3d89aa15</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Docker.DotNet" Version="3.125.15" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Executor\" />
+    <Folder Include="Ultils\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ClCompile Include="Compiler\wrapper.cpp" />
+  </ItemGroup>
+</Project>
