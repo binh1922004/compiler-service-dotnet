@@ -1,69 +1,130 @@
 #!/bin/bash
 # run_and_measure.sh
+# Executes a program and measures execution time, memory usage, and captures output
 
+set -uo pipefail
+
+# --- INPUT PARAMETERS ---
 LANGUAGE=$1
 SUBMISSION_DIR=$2
-INPUT_FILE=$3
-TIMEOUT=$4
-MEMORY_LIMIT_MB=$5
+TESTCASE_DIR=$3        # Thay đổi: Đường dẫn đến thư mục chứa testcase
+TIMEOUT=$4             # Thời gian giới hạn cho MỖI testcase
+MEMORY_LIMIT_MB=$5     # Bộ nhớ giới hạn cho MỖI testcase
+OUTPUT_LIMIT_KB=65536  # 64MB output limit
 
 cd "$SUBMISSION_DIR" || exit 1
 
+# --- SETUP EXECUTABLE ---
 case $LANGUAGE in
-    cpp)
-#        g++ -std=c++17 -O2 "$SOURCE_FILE" -o Main 2>&1 || exit 1
-        EXECUTABLE="./Main"
-        ;;
-
-    python)
-#        python3 -m py_compile "$SOURCE_FILE" 2>&1 || exit 1
-        EXECUTABLE="python3 Main.py"
-        ;;
+    cpp)    EXECUTABLE="./Main" ;;
+    python) EXECUTABLE="python3 Main.py" ;;
+    java)   EXECUTABLE="java Main" ;;
+    *)      echo '{"status":"ERR","error":"Unsupported language"}' >&2; exit 1 ;;
 esac
 
-# Use /usr/bin/time to measure
-TIME_FORMAT='{"execTimeMs":%e,"peakMemoryKB":%M,"userTimeMs":%U,"sysTimeMs":%S,"exitCode":%x}'
-
+# File tạm
 STDOUT_FILE=$(mktemp)
 STDERR_FILE=$(mktemp)
 TIME_FILE=$(mktemp)
+RESULTS_JSON=$(mktemp) # File chứa danh sách kết quả JSON
 
-# Run with measurement
-timeout "${TIMEOUT}s" /usr/bin/time -f "$TIME_FORMAT" -o "$TIME_FILE" \
-    bash -c "ulimit -v \$((${MEMORY_LIMIT_MB}*1024)); $EXECUTABLE < ${INPUT_FILE}" \
-    > "$STDOUT_FILE" 2> "$STDERR_FILE"
+# Khởi tạo mảng JSON
+echo "[" > "$RESULTS_JSON"
+FIRST_ITEM=true
 
-EXIT_CODE=$?
+cleanup() {
+    rm -f "$STDOUT_FILE" "$STDERR_FILE" "$TIME_FILE" "$RESULTS_JSON"
+}
+trap cleanup EXIT
 
-# Read stats
-if [ -f "$TIME_FILE" ]; then
-    STATS=$(cat "$TIME_FILE")
-else
-    STATS='{"execTimeMs":0,"peakMemoryKB":0}'
-fi
+# --- LOOP QUA CÁC FILE INPUT ---
+# Sử dụng sort -V để đảm bảo thứ tự 1.in, 2.in, ... 10.in (thay vì 1, 10, 2)
+for INPUT_FILE in $(ls "$TESTCASE_DIR"/inp/*.inp | sort -V); do
+    
+    # Lấy tên file base (ví dụ: 1.in -> 1)
+    BASENAME=$(basename "$INPUT_FILE" .inp)
+    EXPECTED_FILE="$TESTCASE_DIR/out/$BASENAME.out"
 
-# Determine status
-if [ $EXIT_CODE -eq 124 ]; then
-    STATUS="TLE"
-elif [ $EXIT_CODE -ne 0 ]; then
-    STATUS="RE"
-else
+    # Reset biến cho mỗi vòng lặp
     STATUS="AC"
-fi
+    EXEC_TIME_MS=0
+    PEAK_MEMORY_KB=0
+    
+    # --- EXECUTION ---
+    # Chạy code user với input hiện tại
+    set +e
+    TIME_FORMAT='{"execTimeSec":%e,"peakMemoryKB":%M,"exitCode":%x}'
+    
+    timeout "${TIMEOUT}s" /usr/bin/time -f "$TIME_FORMAT" -o "$TIME_FILE" \
+        bash -c "ulimit -v \$((${MEMORY_LIMIT_MB}*1024)); ulimit -f ${OUTPUT_LIMIT_KB}; $EXECUTABLE < $INPUT_FILE" \
+        > "$STDOUT_FILE" 2> "$STDERR_FILE"
+        
+    EXIT_CODE=$?
+    set -e
 
-# Output JSON
-jq -n \
-    --arg status "$STATUS" \
-    --argjson exitCode "$EXIT_CODE" \
-    --rawfile stdout "$STDOUT_FILE" \
-    --rawfile stderr "$STDERR_FILE" \
-    --argjson stats "$STATS" \
-    '{
-        status: $status,
-        exitCode: $exitCode,
-        stdout: $stdout,
-        stderr:  $stderr,
-        stats: $stats
-    }'
+    # --- PARSE STATS ---
+    if [ -f "$TIME_FILE" ] && [ -s "$TIME_FILE" ] && cat "$TIME_FILE" | jq empty 2>/dev/null; then
+        STATS_RAW=$(cat "$TIME_FILE")
+        EXEC_TIME_MS=$(echo "$STATS_RAW" | jq -r '.execTimeSec * 1000 | round')
+        PEAK_MEMORY_KB=$(echo "$STATS_RAW" | jq -r '.peakMemoryKB')
+        USER_EXIT_CODE=$(echo "$STATS_RAW" | jq -r '.exitCode')
+    else
+        # Fallback nếu time command lỗi
+        EXEC_TIME_MS=0
+        PEAK_MEMORY_KB=0
+        USER_EXIT_CODE=$EXIT_CODE
+    fi
 
-rm -f "$STDOUT_FILE" "$STDERR_FILE" "$TIME_FILE"
+    # --- JUDGING LOGIC ---
+    if [ $EXIT_CODE -eq 124 ]; then
+        STATUS="TLE"
+        EXEC_TIME_MS=$((TIMEOUT * 1000))
+    elif [ $EXIT_CODE -eq 137 ] || [ $EXIT_CODE -eq 153 ]; then
+        STATUS="MLE"
+    elif [ $EXIT_CODE -ne 0 ]; then
+        STATUS="RE"
+        # Check MLE heuristics
+        if [ "$PEAK_MEMORY_KB" -gt 0 ] && [ "$PEAK_MEMORY_KB" -ge $((MEMORY_LIMIT_MB * 1024)) ]; then
+            STATUS="MLE"
+        fi
+    fi
+
+    # --- COMPARE OUTPUT (Token-based) ---
+    if [ "$STATUS" == "AC" ]; then
+        if [ ! -f "$EXPECTED_FILE" ]; then
+            STATUS="ERR" # Lỗi hệ thống: Không tìm thấy file đáp án
+        else
+            # So sánh dùng tr + sed như đã bàn
+            if diff -q <(tr -s '[:space:]' '\n' < "$STDOUT_FILE" | sed '/^$/d') \
+                       <(tr -s '[:space:]' '\n' < "$EXPECTED_FILE" | sed '/^$/d') > /dev/null; then
+                STATUS="AC"
+            else
+                STATUS="WA"
+            fi
+        fi
+    fi
+
+    # --- APPEND RESULT TO JSON ---
+    # Thêm dấu phẩy nếu không phải item đầu tiên
+    if [ "$FIRST_ITEM" = true ]; then
+        FIRST_ITEM=false
+    else
+        echo "," >> "$RESULTS_JSON"
+    fi
+
+    # Tạo JSON object cho testcase này
+    # Lưu ý: Không lưu stdout/stderr để tiết kiệm, chỉ lưu status
+    jq -n -c \
+        --arg case "$BASENAME" \
+        --arg status "$STATUS" \
+        --argjson time "$EXEC_TIME_MS" \
+        --argjson memory "$PEAK_MEMORY_KB" \
+        '{testCase: $case, status: $status, time: $time, memory: $memory}' >> "$RESULTS_JSON"
+
+done
+
+# Đóng mảng JSON
+echo "]" >> "$RESULTS_JSON"
+
+# --- OUTPUT FINAL JSON ---
+cat "$RESULTS_JSON"

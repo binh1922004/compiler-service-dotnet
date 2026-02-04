@@ -1,4 +1,5 @@
 using CompilerService.Docker;
+using Docker.DotNet;
 
 namespace CompilerService.Services;
 
@@ -13,7 +14,8 @@ public class DockerStartupService(
         
         try 
         {
-            await dockerPool.InitializeAsync(5);
+            await dockerPool.InitializeAsync(1);
+            // Console.WriteLine(dockerClient.Containers.ToString());
         }
         catch (Exception ex)
         {
@@ -21,8 +23,8 @@ public class DockerStartupService(
         }
     }
 
-    public Task StopAsync(CancellationToken cancellationToken)
+    public async Task StopAsync(CancellationToken cancellationToken)
     {
-        throw new NotImplementedException();
+        // await dockerPool.ReleaseAsync();
     }
 }
