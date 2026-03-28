@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     jq \
     bc \
     dos2unix \
+    vim \
     && rm -rf /var/lib/apt/lists/*
 
 # Cài đặt các thư viện Python
@@ -30,6 +31,7 @@ RUN useradd -m -s /bin/bash judgeuser && \
 # Copy scripts
 COPY run_and_measure.sh /scripts/run_and_measure.sh
 COPY wrapper.cpp wrapper.cpp
+COPY judge.py /scripts/judge.py
 
 # Chuyển đổi định dạng dòng (đề phòng file từ Windows) và phân quyền
 RUN dos2unix /scripts/run_and_measure.sh && \

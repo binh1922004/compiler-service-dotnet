@@ -70,20 +70,9 @@ public class DockerPool
                 _availableContainers.Enqueue(GetContainerName(i));
             }
         }
-
-        await Testing();
-
+        
     }
 
-    private async Task Testing()
-    {
-        _logger.LogInformation("Testing Docker");
-        string cmd =
-            "g++ -std=gnu++17 -O2 -pipe -static -s /work/696bb1f1053d681143c4c3ab/Main.cpp -o /work/696bb1f1053d681143c4c3ab/Main || echo __CE__:$? >&2";
-        await execCmdFromContainer(GetContainerName(3), cmd);
-
-    }
-    
     private async Task CreateContainer(int id)
     {
         
@@ -127,51 +116,49 @@ public class DockerPool
             throw new Exception("No available containers");
     }
     
-    
-    public async Task execCmdFromContainer(string containerId, string exeCmd)
+    public async Task ReturnContainerAsync(string containerId, CancellationToken cancellationToken = default)
     {
-        await _semaphore.WaitAsync();
-        var execCreateResponse = await _client.Exec.ExecCreateContainerAsync(containerId,
-            new ContainerExecCreateParameters()
-            {
-                AttachStdout = true,
-                AttachStderr = true,
-                Cmd = ["/bin/sh", "-lc", exeCmd],
-                WorkingDir =  "/work",
-            });
-        
-        var stream = await _client.Exec.StartAndAttachContainerExecAsync(
-            execCreateResponse.ID,
-            false);
-
-        var output = new StringBuilder();
-        var buffer = new byte[4096];
-
-        while (true)
-        {
-            var result = await stream.ReadOutputAsync(buffer, 0, buffer.Length, CancellationToken.None);
-    
-            if (result.EOF)
-                break;
-
-            if (result.Count <= 0) continue;
-            var text = Encoding.UTF8.GetString(buffer, 0, result.Count);
-            output.Append(text);
-            Console.Write(text); // In ra realtime
-        }
-        Console.WriteLine(output.ToString());
-        stream.Dispose();
-        var inspectResponse = await _client.Exec.InspectContainerExecAsync(execCreateResponse.ID);
-        if (inspectResponse.ExitCode != 0)
-        {
-            // --- PHÁT HIỆN LỖI COMPILE TẠI ĐÂY ---
-            Console.WriteLine($"\n[COMPILE ERROR] Exit Code: {inspectResponse.ExitCode}");
-            Console.WriteLine("Chi tiết lỗi:");
-        }
-        else 
-        {
-            Console.WriteLine("\n[SUCCESS] Biên dịch thành công.");
-        }
+        _availableContainers.Enqueue(containerId);
         _semaphore.Release();
+    }
+    
+    
+    public async Task ExecCmdFromContainer(string containerId, string exeCmd, CancellationToken cancellationToken = default)
+    {
+        await _semaphore.WaitAsync(cancellationToken);
+        try
+        {
+            var execCreateResponse = await _client.Exec.ExecCreateContainerAsync(containerId,
+                new ContainerExecCreateParameters()
+                {
+                    AttachStdout = true,
+                    AttachStderr = true,
+                    Cmd = ["/bin/sh", "-lc", exeCmd],
+                    WorkingDir =  "/work",
+                }, cancellationToken);
+        
+            using var stream = await _client.Exec.StartAndAttachContainerExecAsync(
+                execCreateResponse.ID,
+                false, cancellationToken);
+
+            var buffer = new byte[4096];
+
+            while (!cancellationToken.IsCancellationRequested) 
+            {
+                var result = await stream.ReadOutputAsync(buffer, 0, buffer.Length, cancellationToken);
+        
+                if (result.EOF)
+                    break;
+
+                if (result.Count <= 0) continue;
+        
+                var text = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                Console.Write(text);
+            }
+        }
+        finally
+        {
+            _semaphore.Release(); 
+        }
     }
 }

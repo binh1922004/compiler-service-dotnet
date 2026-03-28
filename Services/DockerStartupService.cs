@@ -1,10 +1,13 @@
 using CompilerService.Docker;
+using CompilerService.DTO;
+using CompilerService.Utilities;
 
 namespace CompilerService.Services;
 
 public class DockerStartupService(
     DockerPool dockerPool,
-    ILogger<DockerStartupService> logger
+    ILogger<DockerStartupService> logger,
+    IS3Service s3Service
     ) : IHostedService
 {
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -13,7 +16,7 @@ public class DockerStartupService(
         
         try 
         {
-            await dockerPool.InitializeAsync(5);
+            await dockerPool.InitializeAsync(3);
         }
         catch (Exception ex)
         {

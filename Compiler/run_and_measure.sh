@@ -11,12 +11,9 @@ cd "$SUBMISSION_DIR" || exit 1
 
 case $LANGUAGE in
     cpp)
-#        g++ -std=c++17 -O2 "$SOURCE_FILE" -o Main 2>&1 || exit 1
         EXECUTABLE="./Main"
         ;;
-
     python)
-#        python3 -m py_compile "$SOURCE_FILE" 2>&1 || exit 1
         EXECUTABLE="python3 Main.py"
         ;;
 esac
@@ -35,11 +32,16 @@ timeout "${TIMEOUT}s" /usr/bin/time -f "$TIME_FORMAT" -o "$TIME_FILE" \
 
 EXIT_CODE=$?
 
-# Read stats
-if [ -f "$TIME_FILE" ]; then
+# Read and validate stats
+if [ -f "$TIME_FILE" ] && [ -s "$TIME_FILE" ]; then
     STATS=$(cat "$TIME_FILE")
+    echo "$STATS" | od -c >&2  # Show all characters including hidden ones
+    # Validate JSON
+    if ! echo "$STATS" | jq empty 2>/dev/null; then
+        STATS='{"execTimeMs":0,"peakMemoryKB":0,"userTimeMs":0,"sysTimeMs":0,"exitCode":-1}'
+    fi
 else
-    STATS='{"execTimeMs":0,"peakMemoryKB":0}'
+    STATS='{"execTimeMs":0,"peakMemoryKB":0,"userTimeMs":0,"sysTimeMs":0,"exitCode":-1}'
 fi
 
 # Determine status
@@ -58,12 +60,6 @@ jq -n \
     --rawfile stdout "$STDOUT_FILE" \
     --rawfile stderr "$STDERR_FILE" \
     --argjson stats "$STATS" \
-    '{
-        status: $status,
-        exitCode: $exitCode,
-        stdout: $stdout,
-        stderr:  $stderr,
-        stats: $stats
-    }'
+    '{ status: $status, exitCode: $exitCode, stdout: $stdout, stderr: $stderr, stats: $stats }'
 
 rm -f "$STDOUT_FILE" "$STDERR_FILE" "$TIME_FILE"
