@@ -1,6 +1,6 @@
-namespace CompilerService.Settings;
+namespace CompilerService.Configuration;
 
-public class AwsS3Setting
+public class AwsS3Settings
 {
     public string AccessKey { get; set; }
     public string SecretKey { get; set; }

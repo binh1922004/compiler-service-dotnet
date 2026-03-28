@@ -1,28 +1,27 @@
 using Amazon;
 using Amazon.S3;
-using CompilerService.Commands;
-using CompilerService.Docker;
-using CompilerService.Kafka;
+using CompilerService.Configuration;
+using CompilerService.Hosting;
+using CompilerService.Infrastructure.Docker;
+using CompilerService.Infrastructure.Kafka;
+using CompilerService.Infrastructure.Storage;
 using CompilerService.Services;
-using CompilerService.Settings;
-using CompilerService.Utilities;
 
 var builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddHostedService<DockerStartupService>();
-builder.Services.Configure<WorkSetting>(builder.Configuration.GetSection(Constant.WorkDirSetting));
-builder.Services.Configure<KafkaSetting>(builder.Configuration.GetSection(Constant.KafkaSetting));
-builder.Services.Configure<AwsS3Setting>(builder.Configuration.GetSection(Constant.AwsS3Setting));
-var awsS3Setting = builder.Configuration.GetSection(Constant.AwsS3Setting).Get<AwsS3Setting>();
+builder.Services.Configure<WorkSettings>(builder.Configuration.GetSection(Constants.WorkDirSetting));
+builder.Services.Configure<KafkaSettings>(builder.Configuration.GetSection(Constants.KafkaSetting));
+builder.Services.Configure<AwsS3Settings>(builder.Configuration.GetSection(Constants.AwsS3Setting));
+var awsS3Settings = builder.Configuration.GetSection(Constants.AwsS3Setting).Get<AwsS3Settings>();
 
 builder.Services.AddSingleton<DockerPool>();
-builder.Services.AddSingleton<FileCommand>();
-builder.Services.AddSingleton<CompilerCommand>();
+builder.Services.AddSingleton<CommandBuilder>();
 builder.Services.AddSingleton<ICompileService, CompileService>();
 builder.Services.AddSingleton<IS3Service, S3Service>();
 builder.Services.AddSingleton<IFileService, FileService>();
-builder.Services.AddHostedService<KafkaService>();
+builder.Services.AddHostedService<KafkaConsumerService>();
 
-builder.Services.AddSingleton<IAmazonS3>(provider => new AmazonS3Client(awsS3Setting?.AccessKey, awsS3Setting?.SecretKey, RegionEndpoint.USEast1));
+builder.Services.AddSingleton<IAmazonS3>(provider => new AmazonS3Client(awsS3Settings?.AccessKey, awsS3Settings?.SecretKey, RegionEndpoint.USEast1));
 
 var host = builder.Build();
 host.Run();

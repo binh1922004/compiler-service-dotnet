@@ -1,8 +1,6 @@
 using System.Text.Json.Serialization;
-using CompilerService.Models;
-using CompilerService.Utilities;
 
-namespace CompilerService.DTO;
+namespace CompilerService.Models;
 
 public class SubmissionRequest
 {

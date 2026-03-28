@@ -1,34 +1,33 @@
 using System.IO.Compression;
 using Amazon.S3;
 using Amazon.S3.Model;
-using CompilerService.Settings;
+using CompilerService.Configuration;
 using Microsoft.Extensions.Options;
 
-namespace CompilerService.Services;
+namespace CompilerService.Infrastructure.Storage;
 
 public class S3Service(
     IAmazonS3 client,
-    IOptions<AwsS3Setting> awsS3Setting,
-    IOptions<WorkSetting> workSetting,
+    IOptions<AwsS3Settings> awsS3Settings,
+    IOptions<WorkSettings> workSettings,
     ILogger<S3Service> logger)
     : IS3Service
 {
-    private readonly AwsS3Setting _awsS3Setting = awsS3Setting.Value;
-    private readonly WorkSetting _workSetting = workSetting.Value;
-    private readonly ILogger<S3Service> _logger = logger;
+    private readonly AwsS3Settings _awsS3Settings = awsS3Settings.Value;
+    private readonly WorkSettings _workSettings = workSettings.Value;
 
     public async Task DownloadFile(string key)
     {
-        GetObjectRequest request = new GetObjectRequest
+        var request = new GetObjectRequest
         {
             Key = key,
-            BucketName = _awsS3Setting.BucketName
+            BucketName = _awsS3Settings.BucketName
         };
         using var response = await client.GetObjectAsync(request);
         await using var responseStream = response.ResponseStream;
         using var ms = new MemoryStream();
         await responseStream.CopyToAsync(ms);
-        var rootDirectory = _workSetting.ProblemDir + $"/{key}";
+        var rootDirectory = _workSettings.ProblemDir + $"/{key}";
         await using var zipArchive = new ZipArchive(ms, ZipArchiveMode.Read);
 
         foreach (var entry in zipArchive.Entries)
@@ -45,20 +44,22 @@ public class S3Service(
                 continue;
             }
 
-            // 4. Đảm bảo thư mục cha tồn tại và giải nén file
-            Directory.CreateDirectory(Path.GetDirectoryName(destinationPath));
+            Directory.CreateDirectory(Path.GetDirectoryName(destinationPath)!);
             await entry.ExtractToFileAsync(destinationPath, overwrite: true); 
         }
     }
 
     public async Task DownloadProblemFromS3Async(string problemId, string rootDirectory)
     {
-        var key = _awsS3Setting.ProblemPrefix + $"/{problemId}/{problemId}.zip"; 
+        var key = _awsS3Settings.ProblemPrefix + $"/{problemId}/{problemId}.zip"; 
         var request = new GetObjectRequest
         {
             Key = key,
-            BucketName = _awsS3Setting.BucketName
+            BucketName = _awsS3Settings.BucketName
         };
+        
+        logger.LogInformation("Downloading problem {ProblemId} from S3", problemId);
+        
         using var response = await client.GetObjectAsync(request);
         await using var responseStream = response.ResponseStream;
         using var ms = new MemoryStream();
@@ -85,9 +86,10 @@ public class S3Service(
                 continue;
             }
 
-            // 4. Đảm bảo thư mục cha tồn tại và giải nén file
-            Directory.CreateDirectory(Path.GetDirectoryName(destinationPath));
+            Directory.CreateDirectory(Path.GetDirectoryName(destinationPath)!);
             await entry.ExtractToFileAsync(destinationPath, overwrite: true); 
         }
+        
+        logger.LogInformation("Downloaded problem {ProblemId} successfully", problemId);
     }
 }

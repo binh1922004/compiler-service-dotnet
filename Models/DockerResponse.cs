@@ -1,6 +1,6 @@
-﻿using Docker.DotNet.Models;
+using Docker.DotNet.Models;
 
-namespace CompilerService.Docker;
+namespace CompilerService.Models;
 
 public class DockerResponse
 {

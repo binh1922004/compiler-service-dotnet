@@ -1,6 +1,6 @@
-namespace CompilerService.Settings;
+namespace CompilerService.Configuration;
 
-public class WorkSetting
+public class WorkSettings
 {
     public string SubmissionDir { get; set; } = "Submissions";
     public string ProblemDir { get; set; } = "Problems";

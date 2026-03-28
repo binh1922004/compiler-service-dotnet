@@ -1,8 +1,7 @@
-using CompilerService.Docker;
-using CompilerService.DTO;
-using CompilerService.Utilities;
+using CompilerService.Infrastructure.Docker;
+using CompilerService.Infrastructure.Storage;
 
-namespace CompilerService.Services;
+namespace CompilerService.Hosting;
 
 public class DockerStartupService(
     DockerPool dockerPool,
@@ -26,6 +25,7 @@ public class DockerStartupService(
 
     public Task StopAsync(CancellationToken cancellationToken)
     {
-        throw new NotImplementedException();
+        logger.LogInformation("DockerStartupService stopping...");
+        return Task.CompletedTask;
     }
 }

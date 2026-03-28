@@ -1,6 +1,8 @@
-namespace CompilerService.Utilities;
+using CompilerService.Models;
 
-public class Constant
+namespace CompilerService.Configuration;
+
+public static class Constants
 {
     public static string GetLanguageExtension(Language language)
     {

@@ -1,4 +1,4 @@
-namespace CompilerService.Utilities;
+namespace CompilerService.Models;
 
 public enum Language
 {

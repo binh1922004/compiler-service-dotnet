@@ -1,4 +1,4 @@
-namespace CompilerService.Services;
+namespace CompilerService.Infrastructure.Storage;
 
 public interface IS3Service
 {

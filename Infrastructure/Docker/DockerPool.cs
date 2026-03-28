@@ -3,7 +3,7 @@ using System.Text;
 using Docker.DotNet;
 using Docker.DotNet.Models;
 
-namespace CompilerService.Docker;
+namespace CompilerService.Infrastructure.Docker;
 
 public class DockerPool
 {
@@ -14,9 +14,10 @@ public class DockerPool
     private readonly string? _problemVolume;
     private readonly string? _submissionVolume;
     private readonly ConcurrentQueue<string> _availableContainers;
-    // Limit 5 thread can run at time
+    // Limit 5 threads can run at a time
     private readonly SemaphoreSlim _semaphore;
     private const int MaxContainers = 5;
+    
     public DockerPool(ILogger<DockerPool> logger, IConfiguration configuration, string os = "linux")
     {
         _logger = logger;
@@ -30,14 +31,14 @@ public class DockerPool
         
         if (os == "win")
         {
-            _logger.LogInformation("Constructor: Starting Docker by using Window");
+            _logger.LogInformation("Constructor: Starting Docker by using Windows");
             _client = new DockerClientConfiguration(
                     new Uri("npipe://./pipe/docker_engine"))
                 .CreateClient();
         }
         else
         {
-            _logger.LogInformation("Constructor: Starting Docker by using linux");
+            _logger.LogInformation("Constructor: Starting Docker by using Linux");
             _client = new DockerClientConfiguration(
                     new Uri("unix:///var/run/docker.sock"))
                 .CreateClient();
@@ -51,18 +52,18 @@ public class DockerPool
         {
             try
             {
-                _logger.LogInformation($"Checking existed container {i}");
+                _logger.LogInformation("Checking existing container {ContainerIndex}", i);
                 var container = await _client.Containers.InspectContainerAsync(GetContainerName(i));
-                _logger.LogInformation($"Container {i} was created");
+                _logger.LogInformation("Container {ContainerIndex} was created", i);
 
                 if (!container.State.Running)
                 {
                     await _client.Containers.StartContainerAsync(container.ID, new ContainerStartParameters());
                 }
             }
-            catch (DockerApiException e)
+            catch (DockerApiException)
             {
-                _logger.LogInformation($"Container {i} is not created");
+                _logger.LogInformation("Container {ContainerIndex} is not created", i);
                 await CreateContainer(i);
             }
             finally
@@ -76,7 +77,7 @@ public class DockerPool
     private async Task CreateContainer(int id)
     {
         
-        _logger.LogInformation($"Creating Container {id}");
+        _logger.LogInformation("Creating Container {ContainerId}", id);
         var container = await _client.Containers.CreateContainerAsync(new CreateContainerParameters()
         {
             Image = $"{_image}:{_version}",
@@ -98,7 +99,7 @@ public class DockerPool
             },
             Cmd = ["/bin/bash", "-c", "sleep infinity"]
         });
-        _logger.LogInformation($"Created Container {id}");
+        _logger.LogInformation("Created Container {ContainerId}", id);
         await _client.Containers.StartContainerAsync(container.ID, new ContainerStartParameters());
     }
 
@@ -116,10 +117,11 @@ public class DockerPool
             throw new Exception("No available containers");
     }
     
-    public async Task ReturnContainerAsync(string containerId, CancellationToken cancellationToken = default)
+    public Task ReturnContainerAsync(string containerId, CancellationToken cancellationToken = default)
     {
         _availableContainers.Enqueue(containerId);
         _semaphore.Release();
+        return Task.CompletedTask;
     }
     
     
@@ -153,7 +155,7 @@ public class DockerPool
                 if (result.Count <= 0) continue;
         
                 var text = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                Console.Write(text);
+                _logger.LogDebug("{DockerOutput}", text);
             }
         }
         finally

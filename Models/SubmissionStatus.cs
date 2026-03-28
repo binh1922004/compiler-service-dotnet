@@ -1,6 +1,6 @@
-namespace CompilerService.Utilities;
+namespace CompilerService.Models;
 
-public static class Status
+public static class SubmissionStatus
 {
     public const string Pending = "Pending";
     public const string Judging = "Judging";

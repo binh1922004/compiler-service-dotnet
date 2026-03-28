@@ -1,6 +1,4 @@
-using CompilerService.Utilities;
-
-namespace CompilerService.DTO;
+namespace CompilerService.Models;
 
 public class SubmissionResponse
 {

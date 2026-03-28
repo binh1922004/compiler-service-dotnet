@@ -1,8 +1,7 @@
-using CompilerService.Commands;
-using CompilerService.Docker;
-using CompilerService.DTO;
-using CompilerService.Settings;
-using CompilerService.Utilities;
+using CompilerService.Configuration;
+using CompilerService.Infrastructure.Docker;
+using CompilerService.Infrastructure.Storage;
+using CompilerService.Models;
 using Microsoft.Extensions.Options;
 
 namespace CompilerService.Services;
@@ -10,52 +9,46 @@ namespace CompilerService.Services;
 public class CompileService(
     DockerPool dockerPool,
     IFileService fileService,
-    IOptions<WorkSetting> workSetting,
-    FileCommand fileCommand,
+    IOptions<WorkSettings> workSettings,
+    CommandBuilder commandBuilder,
     IS3Service s3Service,
-    CompilerCommand compilerCommand) : ICompileService
+    ILogger<CompileService> logger) : ICompileService
 {
-    private readonly WorkSetting _workSetting = workSetting.Value;
+    private readonly WorkSettings _workSettings = workSettings.Value;
+    
     public async Task SubmitCode(SubmissionRequest submissionRequest, CancellationToken cancellationToken)
     {
         var containerId = await dockerPool.RentContainerAsync();
         try
         {
-            var problemPath = Path.Combine(_workSetting.ProblemDir, submissionRequest.Problem.Id);
+            var problemPath = Path.Combine(_workSettings.ProblemDir, submissionRequest.Problem.Id);
             if (!fileService.FolderExists(problemPath))
             {
                 await s3Service.DownloadProblemFromS3Async(submissionRequest.Problem.Id, problemPath);
             }
 
-            await CreateFile(submissionRequest, containerId, cancellationToken);
-            await JudgeCode(submissionRequest, containerId, cancellationToken);
-            await dockerPool.ReturnContainerAsync(containerId, cancellationToken);
+            await CreateFile(submissionRequest, containerId!, cancellationToken);
+            await JudgeCode(submissionRequest, containerId!, cancellationToken);
+            await dockerPool.ReturnContainerAsync(containerId!, cancellationToken);
         }
         catch (Exception ex)
         {
-            // Handle exceptions (e.g., log them)
-            Console.WriteLine($"Error submitting code: {ex.Message}");
-        }
-        finally
-        {
-            
+            logger.LogError(ex, "Error submitting code for submission {SubmissionId}", submissionRequest.Id);
         }
     }
 
     private async Task JudgeCode(SubmissionRequest submissionRequest, string containerId,
         CancellationToken cancellationToken)
     {
-        var execCmd = compilerCommand.CreateCompileCommand(submissionRequest);
+        var execCmd = commandBuilder.CreateCompileCommand(submissionRequest);
         await dockerPool.ExecCmdFromContainer(containerId, execCmd, cancellationToken);
     }
 
     private async Task CreateFile(SubmissionRequest submissionRequest, string containerId,
         CancellationToken cancellationToken)
     {
-        var extension = Constant.GetLanguageExtension(submissionRequest.Language);
-        var cmdCreateFile =
-            fileCommand.CreateSourceFile(submissionRequest.Source, submissionRequest.Id, containerId, extension);
-
+        var extension = Constants.GetLanguageExtension(submissionRequest.Language);
+        var cmdCreateFile = commandBuilder.CreateSourceFileCommand(submissionRequest.Source, submissionRequest.Id, extension);
         await dockerPool.ExecCmdFromContainer(containerId, cmdCreateFile, cancellationToken);
     }
 }

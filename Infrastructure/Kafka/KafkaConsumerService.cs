@@ -1,36 +1,34 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using CompilerService.DTO;
+using CompilerService.Configuration;
+using CompilerService.Models;
 using CompilerService.Services;
-using CompilerService.Settings;
-using CompilerService.Utilities;
 using Confluent.Kafka;
 using Microsoft.Extensions.Options;
 
-namespace CompilerService.Kafka;
+namespace CompilerService.Infrastructure.Kafka;
 
-public class KafkaService : BackgroundService
+public class KafkaConsumerService : BackgroundService
 {
     private readonly IConsumer<string, string> _kafkaConsumer;
-    private readonly IServiceScopeFactory _serviceScopeFactory;
     private readonly ICompileService _compileService;
-    private readonly ILogger<KafkaService> _logger;
-    private readonly JsonSerializerOptions _jsonSerializerOptions = new JsonSerializerOptions
+    private readonly ILogger<KafkaConsumerService> _logger;
+    private readonly JsonSerializerOptions _jsonSerializerOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         Converters = { new JsonStringEnumConverter() }
     };
     
     
-    public KafkaService(IConfiguration configuration, IServiceScopeFactory serviceScopeFactory, ICompileService compileService, ILogger<KafkaService> logger)
+    public KafkaConsumerService(IConfiguration configuration, ICompileService compileService, ILogger<KafkaConsumerService> logger)
     {
-        _serviceScopeFactory = serviceScopeFactory;
         _compileService = compileService;
         _logger = logger;
         var consumerConfig = new ConsumerConfig();
-        configuration.GetSection(Constant.KafkaConsumerSettings).Bind(consumerConfig);
+        configuration.GetSection(Constants.KafkaConsumerSettings).Bind(consumerConfig);
         _kafkaConsumer = new ConsumerBuilder<string, string>(consumerConfig).Build();
     }
+    
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {
         return Task.Run(() => StartConsumerLoop(stoppingToken), stoppingToken);
@@ -50,7 +48,7 @@ public class KafkaService : BackgroundService
                 
                 if (submissionRequest == null)
                 {
-                    Console.WriteLine("Failed to deserialize message.");
+                    _logger.LogWarning("Failed to deserialize message");
                     continue;
                 }
                 _logger.LogInformation("Thread {ThreadId} received submission {SubmissionId} for problem {ProblemId}",
@@ -63,8 +61,7 @@ public class KafkaService : BackgroundService
             }
             catch (ConsumeException e)
             {
-                // Consumer errors should generally be ignored (or logged) unless fatal.
-                Console.WriteLine($"Consume error: {e.Error.Reason}");
+                _logger.LogError(e, "Consume error: {Reason}", e.Error.Reason);
 
                 if (e.Error.IsFatal)
                 {
@@ -73,7 +70,7 @@ public class KafkaService : BackgroundService
             }
             catch (Exception e)
             {
-                Console.WriteLine($"Unexpected error: {e}");
+                _logger.LogError(e, "Unexpected error in Kafka consumer loop");
                 break;
             }
         }
