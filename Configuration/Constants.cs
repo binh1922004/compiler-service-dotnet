@@ -16,7 +16,7 @@ public static class Constants
     }
 
     public const string WorkDirSetting = "WorkdirConfig";
-    public const string KafkaSetting = "KafkaConfig";
+    public const string KafkaSetting = "Kafka:Topics";
 
     public const string KafkaProducerSettings = "Kafka:ProducerSettings";
     public const string KafkaConsumerSettings = "Kafka:ConsumerSettings";

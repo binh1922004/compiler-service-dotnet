@@ -28,20 +28,24 @@ public class CompileService(
             }
 
             await CreateFile(submissionRequest, containerId!, cancellationToken);
-            await JudgeCode(submissionRequest, containerId!, cancellationToken);
-            await dockerPool.ReturnContainerAsync(containerId!, cancellationToken);
+            var judgeOutput = await JudgeCode(submissionRequest, containerId!, cancellationToken);
+            logger.LogInformation("Judge output for submission {SubmissionId}: {Output}", submissionRequest.Id, judgeOutput);
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Error submitting code for submission {SubmissionId}", submissionRequest.Id);
         }
+        finally
+        {
+            await dockerPool.ReturnContainerAsync(containerId!, cancellationToken: cancellationToken);
+        }
     }
 
-    private async Task JudgeCode(SubmissionRequest submissionRequest, string containerId,
+    private async Task<string> JudgeCode(SubmissionRequest submissionRequest, string containerId,
         CancellationToken cancellationToken)
     {
         var execCmd = commandBuilder.CreateCompileCommand(submissionRequest);
-        await dockerPool.ExecCmdFromContainer(containerId, execCmd, cancellationToken);
+        return await dockerPool.ExecCmdFromContainer(containerId, execCmd, cancellationToken);
     }
 
     private async Task CreateFile(SubmissionRequest submissionRequest, string containerId,
