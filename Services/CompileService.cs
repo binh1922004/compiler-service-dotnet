@@ -1,8 +1,11 @@
+using System.Text.Json;
 using CompilerService.Configuration;
 using CompilerService.Infrastructure.Docker;
 using CompilerService.Infrastructure.Storage;
 using CompilerService.Models;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Newtonsoft.Json.Linq;
 
 namespace CompilerService.Services;
 
@@ -16,7 +19,8 @@ public class CompileService(
 {
     private readonly WorkSettings _workSettings = workSettings.Value;
     
-    public async Task SubmitCode(SubmissionRequest submissionRequest, CancellationToken cancellationToken)
+    public async Task<SubmissionResponse?> SubmitCode(SubmissionRequest submissionRequest,
+        CancellationToken cancellationToken)
     {
         var containerId = await dockerPool.RentContainerAsync();
         try
@@ -30,10 +34,17 @@ public class CompileService(
             await CreateFile(submissionRequest, containerId!, cancellationToken);
             var judgeOutput = await JudgeCode(submissionRequest, containerId!, cancellationToken);
             logger.LogInformation("Judge output for submission {SubmissionId}: {Output}", submissionRequest.Id, judgeOutput);
+            var jsonObject = JsonSerializer.Deserialize<SubmissionResponse>(judgeOutput);
+            if (jsonObject != null)
+            {
+                jsonObject.Id = submissionRequest.Id;
+            }
+            return jsonObject;
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Error submitting code for submission {SubmissionId}", submissionRequest.Id);
+            return null;
         }
         finally
         {

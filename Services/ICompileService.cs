@@ -4,5 +4,5 @@ namespace CompilerService.Services;
 
 public interface ICompileService
 {
-    Task SubmitCode(SubmissionRequest submissionRequest, CancellationToken cancellationToken);
+    Task<SubmissionResponse?> SubmitCode(SubmissionRequest submissionRequest, CancellationToken cancellationToken);
 }

@@ -8,7 +8,7 @@ public class SubmissionHandler(
     IKafkaClient kafkaClient,
     ILogger<SubmissionHandler> logger) : IMessageHandler<SubmissionRequest>
 {
-    private const string ResultTopic = "submission-result-topic";
+    private const string ResultTopic = "result-topic";
 
     public async Task HandleAsync(SubmissionRequest message, CancellationToken cancellationToken)
     {
@@ -17,12 +17,11 @@ public class SubmissionHandler(
 
         try
         {
-            await compileService.SubmitCode(message, cancellationToken);
-
-            // TODO: When CompileService returns a result, publish it:
-            // await kafkaClient.ProduceAsync(ResultTopic, message.Id, result, cancellationToken);
-
-            logger.LogInformation("Completed submission {SubmissionId}", message.Id);
+            var result = await compileService.SubmitCode(message, cancellationToken);
+            if (result != null)
+            {
+                await kafkaClient.ProduceAsync(ResultTopic, message.Id, result, cancellationToken);
+            }
         }
         catch (Exception ex)
         {
@@ -31,10 +30,7 @@ public class SubmissionHandler(
             var errorResponse = new SubmissionResponse
             {
                 Id = message.Id,
-                problemId = message.Problem.Id,
                 Status = SubmissionStatus.IE,
-                Source = message.Source,
-                Language = message.Language
             };
             await kafkaClient.ProduceAsync(ResultTopic, message.Id, errorResponse, cancellationToken);
         }
