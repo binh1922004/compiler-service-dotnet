@@ -27,7 +27,21 @@ services:
       retries: 5
     networks:
       - kafka-net
-
+  compiler-service:
+    user: root
+    image: binhhvt/bnoj:1.0
+    container_name: bnoj-compiler-service 
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - problem_data:/app/problems
+    networks:
+      - kafka-net
+    environment:
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - Kafka__ProducerSettings__BootstrapServers=broker:9092
+      - Kafka__ConsumerSettings__BootstrapServers=broker:9092
+    depends_on:
+      - broker
   kafka-ui:
     container_name: kafka-ui
     image: provectuslabs/kafka-ui:latest
@@ -46,3 +60,8 @@ services:
 networks:
   kafka-net:
     driver: bridge
+volumes:
+  submission_data:
+    name: submission_data
+  problem_data:
+    name: problem_data
