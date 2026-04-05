@@ -2,9 +2,12 @@ services:
   broker:
     image: apache/kafka:latest
     container_name: broker
+    volumes:
+      - ./Configuration/kafka_server_jaas.conf:/etc/kafka/kafka_server_jaas.conf
     ports:
       - 9094:9094
     environment:
+      KAFKA_OPTS: "-Djava.security.auth.login.config=/etc/kafka/kafka_server_jaas.conf"
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
       # Lắng nghe trên mọi interface (0.0.0.0) thay vì chỉ localhost
@@ -12,7 +15,9 @@ services:
       # Quảng bá: Dùng 'broker:9092' cho mạng nội bộ Docker, 'localhost:9094' cho máy Host
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://broker:9092,EXTERNAL://localhost:9094
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:SASL_PLAINTEXT
+      KAFKA_SASL_ENABLED_MECHANISMS: PLAIN
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       # Dùng tên container thay vì localhost
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@broker:9093
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
