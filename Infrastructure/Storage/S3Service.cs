@@ -49,16 +49,16 @@ public class S3Service(
         }
     }
 
-    public async Task DownloadProblemFromS3Async(string problemId, string rootDirectory)
+    public async Task DownloadProblemFromS3Async(string key, string rootDirectory)
     {
-        var key = _awsS3Settings.ProblemPrefix + $"/{problemId}/{problemId}.zip"; 
+        key = _awsS3Settings.ProblemPrefix + "/" + key;
         var request = new GetObjectRequest
         {
             Key = key,
             BucketName = _awsS3Settings.BucketName
         };
         
-        logger.LogInformation("Downloading problem {ProblemId} from S3", problemId);
+        logger.LogInformation("Downloading key {key} from S3", key);
         
         using var response = await client.GetObjectAsync(request);
         await using var responseStream = response.ResponseStream;
@@ -75,11 +75,6 @@ public class S3Service(
         foreach (var entry in zipArchive.Entries)
         {
             var destinationPath = Path.Combine(rootDirectory, entry.FullName);
-            if (!destinationPath.StartsWith(Path.GetFullPath(rootDirectory), StringComparison.OrdinalIgnoreCase))
-            {
-                continue; 
-            }
-
             if (Path.GetFileName(destinationPath).Length == 0)
             {
                 Directory.CreateDirectory(destinationPath);
@@ -90,6 +85,6 @@ public class S3Service(
             await entry.ExtractToFileAsync(destinationPath, overwrite: true); 
         }
         
-        logger.LogInformation("Downloaded problem {ProblemId} successfully", problemId);
+        logger.LogInformation("Downloaded key {key} successfully", key);
     }
 }

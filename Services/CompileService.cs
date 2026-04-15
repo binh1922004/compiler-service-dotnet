@@ -23,12 +23,16 @@ public class CompileService(
         CancellationToken cancellationToken)
     {
         var containerId = await dockerPool.RentContainerAsync();
+        logger.LogInformation("Rented container {ContainerId} for submission {SubmissionId}", containerId, submissionRequest.Id);
         try
         {
             var problemPath = Path.Combine(_workSettings.ProblemDir, submissionRequest.Problem.Id);
             if (!fileService.FolderExists(problemPath))
             {
-                await s3Service.DownloadProblemFromS3Async(submissionRequest.Problem.Id, problemPath);
+                var version = submissionRequest.Problem.Version == 0 ? "" : $"-v{submissionRequest.Problem.Version}";
+                var problemVersion = submissionRequest.Problem.Id + version;
+                var key = $"{submissionRequest.Problem.Id}/{problemVersion}.zip";
+                await s3Service.DownloadProblemFromS3Async(key, problemPath);
             }
 
             await CreateFile(submissionRequest, containerId!, cancellationToken);

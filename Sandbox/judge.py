@@ -69,6 +69,12 @@ def run_solution(solution_file, input_data, time_limit, memory_limit):
     try:
         if ext == '.py':
             exec_cmd = ['python3', solution_file]
+        elif ext == '.pl':
+            exec_cmd = ['perl', solution_file]
+        elif ext == '.js':
+            exec_cmd = ['node', solution_file]
+        elif ext == '.rb':
+            exec_cmd = ['ruby', solution_file] 
         elif ext == '.cpp':
             exe_file = solution_file.replace('.cpp', '.out')
             if not os.path.exists(exe_file) or \

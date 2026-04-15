@@ -11,6 +11,8 @@ public static class Constants
             Language.cpp => "cpp",
             Language.py => "py",
             Language.js => "js",
+            Language.pl => "pl",
+            Language.rb => "rb",
             _ => throw new ArgumentOutOfRangeException(nameof(language), language, null)
         };
     }

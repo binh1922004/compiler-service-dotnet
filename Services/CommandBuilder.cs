@@ -21,6 +21,6 @@ public class CommandBuilder(IOptions<WorkSettings> workSettings)
     {
         var submissionDir = $"{_workSettings.SubmissionDir}/{submissionId}";
         var filePath = $"{submissionDir}/{submissionId}.{extension}";
-        return $"mkdir -p {submissionDir} && cat > {filePath} << EOF\n{sourceCode}\nEOF\n";
+        return $"mkdir -p {submissionDir} && cat > {filePath} << 'EOF'\n{sourceCode}\nEOF\n";
     }
 }

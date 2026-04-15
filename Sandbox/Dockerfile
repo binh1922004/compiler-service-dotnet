@@ -15,6 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     bc \
     dos2unix \
     vim \
+    ruby \
     && rm -rf /var/lib/apt/lists/*
 
 # Cài đặt các thư viện Python

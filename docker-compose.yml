@@ -45,6 +45,8 @@ services:
       - DOCKER_HOST=unix:///var/run/docker.sock
       - Kafka__ProducerSettings__BootstrapServers=broker:9092
       - Kafka__ConsumerSettings__BootstrapServers=broker:9092
+      - AWS__S3__AccessKey=
+      - AWS__S3__SecretKey=
     depends_on:
       - broker
   kafka-ui:
