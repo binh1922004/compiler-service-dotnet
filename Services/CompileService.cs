@@ -3,9 +3,7 @@ using CompilerService.Configuration;
 using CompilerService.Infrastructure.Docker;
 using CompilerService.Infrastructure.Storage;
 using CompilerService.Models;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using Newtonsoft.Json.Linq;
 
 namespace CompilerService.Services;
 
@@ -18,12 +16,13 @@ public class CompileService(
     ILogger<CompileService> logger) : ICompileService
 {
     private readonly WorkSettings _workSettings = workSettings.Value;
-    
+
     public async Task<SubmissionResponse?> SubmitCode(SubmissionRequest submissionRequest,
         CancellationToken cancellationToken)
     {
         var containerId = await dockerPool.RentContainerAsync();
-        logger.LogInformation("Rented container {ContainerId} for submission {SubmissionId}", containerId, submissionRequest.Id);
+        logger.LogInformation("Rented container {ContainerId} for submission {SubmissionId}", containerId,
+            submissionRequest.Id);
         try
         {
             var problemPath = Path.Combine(_workSettings.ProblemDir, submissionRequest.Problem.Id);
@@ -37,12 +36,10 @@ public class CompileService(
 
             await CreateFile(submissionRequest, containerId!, cancellationToken);
             var judgeOutput = await JudgeCode(submissionRequest, containerId!, cancellationToken);
-            logger.LogInformation("Judge output for submission {SubmissionId}: {Output}", submissionRequest.Id, judgeOutput);
+            logger.LogInformation("Judge output for submission {SubmissionId}: {Output}", submissionRequest.Id,
+                judgeOutput);
             var jsonObject = JsonSerializer.Deserialize<SubmissionResponse>(judgeOutput);
-            if (jsonObject != null)
-            {
-                jsonObject.Id = submissionRequest.Id;
-            }
+            if (jsonObject != null) jsonObject.Id = submissionRequest.Id;
             return jsonObject;
         }
         catch (Exception ex)
@@ -52,7 +49,8 @@ public class CompileService(
         }
         finally
         {
-            await dockerPool.ReturnContainerAsync(containerId!, cancellationToken: cancellationToken);
+            await DeleteFile(submissionRequest, containerId!, cancellationToken);
+            await dockerPool.ReturnContainerAsync(containerId!, cancellationToken);
         }
     }
 
@@ -67,7 +65,16 @@ public class CompileService(
         CancellationToken cancellationToken)
     {
         var extension = Constants.GetLanguageExtension(submissionRequest.Language);
-        var cmdCreateFile = commandBuilder.CreateSourceFileCommand(submissionRequest.Source, submissionRequest.Id, extension);
+        var cmdCreateFile =
+            commandBuilder.CreateSourceFileCommand(submissionRequest.Source, submissionRequest.Id, extension);
         await dockerPool.ExecCmdFromContainer(containerId, cmdCreateFile, cancellationToken);
+    }
+
+    private async Task DeleteFile(SubmissionRequest submissionRequest, string containerId,
+        CancellationToken cancellationToken)
+    {
+        var extension = Constants.GetLanguageExtension(submissionRequest.Language);
+        var cmdDeleteFile = commandBuilder.CreateDeleteSourceFileCommand(submissionRequest.Id, extension);
+        await dockerPool.ExecCmdFromContainer(containerId, cmdDeleteFile, cancellationToken);
     }
 }
