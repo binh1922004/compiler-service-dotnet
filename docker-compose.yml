@@ -4,21 +4,20 @@ services:
     container_name: broker
     volumes:
       - ./Configuration/kafka_server_jaas.conf:/etc/kafka/kafka_server_jaas.conf
+      - kafka_data:/var/lib/kafka/data # 1. Add this volume mapping
     ports:
       - 9094:9094
     environment:
       KAFKA_OPTS: "-Djava.security.auth.login.config=/etc/kafka/kafka_server_jaas.conf"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data # 2. Force Kafka to use the volume path
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
-      # Lắng nghe trên mọi interface (0.0.0.0) thay vì chỉ localhost
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:9094
-      # Quảng bá: Dùng 'broker:9092' cho mạng nội bộ Docker, 'localhost:9094' cho máy Host
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://broker:9092,EXTERNAL://localhost:9094
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:SASL_PLAINTEXT
       KAFKA_SASL_ENABLED_MECHANISMS: PLAIN
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-      # Dùng tên container thay vì localhost
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@broker:9093
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
@@ -34,7 +33,7 @@ services:
       - kafka-net
   compiler-service:
     user: root
-    image: binhhvt/bnoj:1.0
+    image: binhhvt/bnoj:5.0
     container_name: bnoj-compiler-service 
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
@@ -45,24 +44,28 @@ services:
       - DOCKER_HOST=unix:///var/run/docker.sock
       - Kafka__ProducerSettings__BootstrapServers=broker:9092
       - Kafka__ConsumerSettings__BootstrapServers=broker:9092
+      - Kafka__Topics__SubmissionTopic=compiler.submission.request
+      - Kafka__Topics__ResultTopic=compiler.submission.response
+      - CompilerConfig__Image=binhhvt/oj
+      - CompilerConfig__Version=3.0
       - AWS__S3__AccessKey=
       - AWS__S3__SecretKey=
     depends_on:
       - broker
-  kafka-ui:
-    container_name: kafka-ui
-    image: provectuslabs/kafka-ui:latest
-    ports:
-      - 8081:8080
-    environment:
-      DYNAMIC_CONFIG_ENABLED: 'true'
-      # Cấu hình để Kafka UI TỰ ĐỘNG kết nối với Broker nội bộ
-      KAFKA_CLUSTERS_0_NAME: local-cluster
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: broker:9092
-    networks:
-      - kafka-net
-    depends_on:
-      - broker
+#  kafka-ui:
+#    container_name: kafka-ui
+#    image: provectuslabs/kafka-ui:latest
+#    ports:
+#      - 8081:8080
+#    environment:
+#      DYNAMIC_CONFIG_ENABLED: 'true'
+#      # Cấu hình để Kafka UI TỰ ĐỘNG kết nối với Broker nội bộ
+#      KAFKA_CLUSTERS_0_NAME: local-cluster
+#      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: broker:9092
+#    networks:
+#      - kafka-net
+#    depends_on:
+#      - broker
 
 networks:
   kafka-net:
@@ -72,3 +75,5 @@ volumes:
     name: submission_data
   problem_data:
     name: problem_data
+  kafka_data: # 3. Declare the new volume here
+    name: kafka_data

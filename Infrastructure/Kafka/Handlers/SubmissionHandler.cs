@@ -1,15 +1,17 @@
+using CompilerService.Configuration;
 using CompilerService.Models;
 using CompilerService.Services;
+using Microsoft.Extensions.Options;
 
 namespace CompilerService.Infrastructure.Kafka.Handlers;
 
 public class SubmissionHandler(
     ICompileService compileService,
     IKafkaClient kafkaClient,
+    IOptions<KafkaSettings> kafkaSettings,
     ILogger<SubmissionHandler> logger) : IMessageHandler<SubmissionRequest>
 {
-    private const string ResultTopic = "result-topic";
-
+    private readonly KafkaSettings _kafkaSettings = kafkaSettings.Value;
     public async Task HandleAsync(SubmissionRequest message, CancellationToken cancellationToken)
     {
         logger.LogInformation("Processing submission {SubmissionId} for problem {ProblemId}",
@@ -20,7 +22,7 @@ public class SubmissionHandler(
             var result = await compileService.SubmitCode(message, cancellationToken);
             if (result != null)
             {
-                await kafkaClient.ProduceAsync(ResultTopic, message.Id, result, cancellationToken);
+                await kafkaClient.ProduceAsync(_kafkaSettings.ResultTopic, message.Id, result, cancellationToken);
             }
         }
         catch (Exception ex)
@@ -32,7 +34,7 @@ public class SubmissionHandler(
                 Id = message.Id,
                 Status = SubmissionStatus.IE,
             };
-            await kafkaClient.ProduceAsync(ResultTopic, message.Id, errorResponse, cancellationToken);
+            await kafkaClient.ProduceAsync(_kafkaSettings.ResultTopic, message.Id, errorResponse, cancellationToken);
         }
     }
 }

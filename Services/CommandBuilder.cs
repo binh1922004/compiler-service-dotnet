@@ -24,10 +24,9 @@ public class CommandBuilder(IOptions<WorkSettings> workSettings)
         return $"mkdir -p {submissionDir} && cat > {filePath} << 'EOF'\n{sourceCode}\nEOF\n";
     }
 
-    public string CreateDeleteSourceFileCommand(string submissionRequestId, string extension)
+    public string CreateDeleteSubmissionFolderCommand(string submissionRequestId)
     {
         var submissionDir = $"{_workSettings.SubmissionDir}/{submissionRequestId}";
-        var filePath = $"{submissionDir}/{submissionRequestId}.{extension}";
-        return $"rm -f {filePath}";
+        return $"rm -rf {submissionDir}";
     }
 }

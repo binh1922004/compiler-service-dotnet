@@ -76,16 +76,20 @@ def run_solution(solution_file, input_data, time_limit, memory_limit):
         elif ext == '.rb':
             exec_cmd = ['ruby', solution_file] 
         elif ext == '.cpp':
-            exe_file = solution_file.replace('.cpp', '.out')
+            abs_solution_file = os.path.abspath(solution_file)
+            exe_file = abs_solution_file.replace('.cpp', '.out')
+            
             if not os.path.exists(exe_file) or \
-               os.path.getmtime(solution_file) > os.path.getmtime(exe_file):
+               os.path.getmtime(abs_solution_file) > os.path.getmtime(exe_file):
                 compile_result = subprocess.run(
-                    ['g++', '-O2', '-std=c++17', solution_file, '-o', exe_file],
+                    ['g++', '-O2', '-std=c++17', abs_solution_file, '-o', exe_file],
                     capture_output=True, text=True, timeout=30
                 )
                 if compile_result.returncode != 0:
                     return None, 0, 0, "CE"
-            exec_cmd = [exe_file]
+            
+            # File thực thi lúc này chắc chắn là đường dẫn tuyệt đối (vd: /app/judge/main.out)
+            exec_cmd = [exe_file]]
         else:
             return None, 0, 0, "CE"
         

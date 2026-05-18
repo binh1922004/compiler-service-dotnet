@@ -25,11 +25,11 @@ public class CompileService(
             submissionRequest.Id);
         try
         {
-            var problemPath = Path.Combine(_workSettings.ProblemDir, submissionRequest.Problem.Id);
+            var version = submissionRequest.Problem.Version == 0 ? "" : $"-v{submissionRequest.Problem.Version}";
+            var problemVersion = submissionRequest.Problem.Id + version;
+            var problemPath = Path.Combine(_workSettings.ProblemDir, problemVersion);
             if (!fileService.FolderExists(problemPath))
             {
-                var version = submissionRequest.Problem.Version == 0 ? "" : $"-v{submissionRequest.Problem.Version}";
-                var problemVersion = submissionRequest.Problem.Id + version;
                 var key = $"{submissionRequest.Problem.Id}/{problemVersion}.zip";
                 await s3Service.DownloadProblemFromS3Async(key, problemPath);
             }
@@ -49,7 +49,7 @@ public class CompileService(
         }
         finally
         {
-            await DeleteFile(submissionRequest, containerId!, cancellationToken);
+            await DeleteSubmissionFolder(submissionRequest, containerId!, cancellationToken);
             await dockerPool.ReturnContainerAsync(containerId!, cancellationToken);
         }
     }
@@ -70,11 +70,11 @@ public class CompileService(
         await dockerPool.ExecCmdFromContainer(containerId, cmdCreateFile, cancellationToken);
     }
 
-    private async Task DeleteFile(SubmissionRequest submissionRequest, string containerId,
+    private async Task DeleteSubmissionFolder(SubmissionRequest submissionRequest, string containerId,
         CancellationToken cancellationToken)
     {
         var extension = Constants.GetLanguageExtension(submissionRequest.Language);
-        var cmdDeleteFile = commandBuilder.CreateDeleteSourceFileCommand(submissionRequest.Id, extension);
+        var cmdDeleteFile = commandBuilder.CreateDeleteSubmissionFolderCommand(submissionRequest.Id);
         await dockerPool.ExecCmdFromContainer(containerId, cmdDeleteFile, cancellationToken);
     }
 }

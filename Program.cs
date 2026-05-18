@@ -34,7 +34,6 @@ builder.Services.AddSingleton<IMessageHandler<SubmissionRequest>, SubmissionHand
 
 // Hosted Services
 builder.Services.AddHostedService<DockerStartupService>();
-builder.Services.AddHostedService<KafkaConsumerService>();
 builder.Services.AddHostedService<KafkaSubscriberWorker>();
 
 var host = builder.Build();
