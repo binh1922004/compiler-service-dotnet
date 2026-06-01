@@ -7,12 +7,13 @@ using Microsoft.Extensions.Options;
 namespace CompilerService.Infrastructure.Kafka;
 
 /// <summary>
-/// Thin BackgroundService — only subscribes to Kafka and dispatches messages to handlers.
-/// Contains zero business logic.
+///     Thin BackgroundService — only subscribes to Kafka and dispatches messages to handlers.
+///     Contains zero business logic.
 /// </summary>
 public class KafkaSubscriberWorker(
     IKafkaClient kafkaClient,
     IMessageHandler<SubmissionRequest> submissionHandler,
+    IMessageHandler<TestCasePlan> testCaseGenerationHandler,
     ILogger<KafkaSubscriberWorker> logger,
     IOptions<KafkaSettings> kafkaSettings)
     : BackgroundService
@@ -22,6 +23,7 @@ public class KafkaSubscriberWorker(
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         Converters = { new JsonStringEnumConverter() }
     };
+
     private readonly KafkaSettings _kafkaSettings = kafkaSettings.Value;
 
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
@@ -32,9 +34,9 @@ public class KafkaSubscriberWorker(
     private async Task SubscribeLoop(CancellationToken stoppingToken)
     {
         kafkaClient.Subscribe(_kafkaSettings.SubmissionTopic);
+        kafkaClient.Subscribe(_kafkaSettings.TestCaseGenerationRequestTopic);
 
         while (!stoppingToken.IsCancellationRequested)
-        {
             try
             {
                 var consumeResult = kafkaClient.Consume(stoppingToken);
@@ -47,12 +49,23 @@ public class KafkaSubscriberWorker(
                     var message = JsonSerializer.Deserialize<SubmissionRequest>(json, _jsonOptions);
                     if (message == null)
                     {
-                        logger.LogWarning("Failed to deserialize message");
+                        logger.LogWarning("Failed to deserialize submission message");
                         continue;
                     }
 
                     // Dispatch to handler — all business logic lives there
                     await submissionHandler.HandleAsync(message, stoppingToken);
+                }
+                else if (topic == _kafkaSettings.TestCaseGenerationRequestTopic)
+                {
+                    var message = JsonSerializer.Deserialize<TestCasePlan>(json, _jsonOptions);
+                    if (message == null)
+                    {
+                        logger.LogWarning("Failed to deserialize test case generation message");
+                        continue;
+                    }
+
+                    await testCaseGenerationHandler.HandleAsync(message, stoppingToken);
                 }
             }
             catch (OperationCanceledException)
@@ -63,6 +76,5 @@ public class KafkaSubscriberWorker(
             {
                 logger.LogError(ex, "Error in Kafka subscriber loop");
             }
-        }
     }
 }

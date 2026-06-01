@@ -4,6 +4,13 @@ namespace CompilerService.Configuration;
 
 public static class Constants
 {
+    public const string WorkDirSetting = "WorkdirConfig";
+    public const string KafkaSetting = "Kafka:Topics";
+
+    public const string KafkaProducerSettings = "Kafka:ProducerSettings";
+    public const string KafkaConsumerSettings = "Kafka:ConsumerSettings";
+    public const string AwsS3Setting = "AWS:S3";
+
     public static string GetLanguageExtension(Language language)
     {
         return language switch
@@ -16,11 +23,4 @@ public static class Constants
             _ => throw new ArgumentOutOfRangeException(nameof(language), language, null)
         };
     }
-
-    public const string WorkDirSetting = "WorkdirConfig";
-    public const string KafkaSetting = "Kafka:Topics";
-
-    public const string KafkaProducerSettings = "Kafka:ProducerSettings";
-    public const string KafkaConsumerSettings = "Kafka:ConsumerSettings";
-    public const string AwsS3Setting = "AWS:S3";
 }

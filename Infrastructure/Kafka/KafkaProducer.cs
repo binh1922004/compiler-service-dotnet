@@ -7,13 +7,14 @@ namespace CompilerService.Infrastructure.Kafka;
 
 public class KafkaProducer : IKafkaProducer, IDisposable
 {
-    private readonly IProducer<string, string> _producer;
-    private readonly ILogger<KafkaProducer> _logger;
     private readonly JsonSerializerOptions _jsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         Converters = { new JsonStringEnumConverter() }
     };
+
+    private readonly ILogger<KafkaProducer> _logger;
+    private readonly IProducer<string, string> _producer;
 
     public KafkaProducer(IConfiguration configuration, ILogger<KafkaProducer> logger)
     {
@@ -23,7 +24,14 @@ public class KafkaProducer : IKafkaProducer, IDisposable
         _producer = new ProducerBuilder<string, string>(producerConfig).Build();
     }
 
-    public async Task ProduceAsync<T>(string topic, string key, T message, CancellationToken cancellationToken = default)
+    public void Dispose()
+    {
+        _producer.Flush(TimeSpan.FromSeconds(5));
+        _producer.Dispose();
+    }
+
+    public async Task ProduceAsync<T>(string topic, string key, T message,
+        CancellationToken cancellationToken = default)
     {
         var json = JsonSerializer.Serialize(message, _jsonOptions);
         var kafkaMessage = new Message<string, string>
@@ -35,11 +43,5 @@ public class KafkaProducer : IKafkaProducer, IDisposable
         var result = await _producer.ProduceAsync(topic, kafkaMessage, cancellationToken);
         _logger.LogDebug("Produced message to {Topic} [{Partition}] @ offset {Offset}",
             result.Topic, result.Partition.Value, result.Offset.Value);
-    }
-
-    public void Dispose()
-    {
-        _producer.Flush(TimeSpan.FromSeconds(5));
-        _producer.Dispose();
     }
 }

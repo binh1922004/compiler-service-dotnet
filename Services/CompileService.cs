@@ -13,9 +13,11 @@ public class CompileService(
     IOptions<WorkSettings> workSettings,
     CommandBuilder commandBuilder,
     IS3Service s3Service,
+    IOptions<AwsS3Settings> awsS3Settings,
     ILogger<CompileService> logger) : ICompileService
 {
     private readonly WorkSettings _workSettings = workSettings.Value;
+    private readonly AwsS3Settings _awsS3Settings = awsS3Settings.Value;
 
     public async Task<SubmissionResponse?> SubmitCode(SubmissionRequest submissionRequest,
         CancellationToken cancellationToken)
@@ -51,6 +53,109 @@ public class CompileService(
         {
             await DeleteSubmissionFolder(submissionRequest, containerId!, cancellationToken);
             await dockerPool.ReturnContainerAsync(containerId!, cancellationToken);
+        }
+    }
+
+    public async Task<TestCaseGenerationResult> GenerateTestCases(TestCasePlan plan,
+        CancellationToken cancellationToken)
+    {
+        var containerId = await dockerPool.RentContainerAsync();
+        logger.LogInformation("Rented container {ContainerId} for test case generation, PlanId={PlanId}",
+            containerId, plan.PlanId);
+
+        try
+        {
+            var planName = $"{plan.PlanId}-v{plan.Version}";
+            // 1. Create the working directory and write input.py + output.py
+            var createFilesCmd = commandBuilder.CreateTestCaseFilesCommand(planName, plan.InputCode, plan.OutPutCode);
+            await dockerPool.ExecCmdFromContainer(containerId!, createFilesCmd, cancellationToken);
+
+            // 2. Run the test_case_generator.py script
+            var generateCmd = commandBuilder.GenerateTestCaseCommand(planName);
+            logger.LogInformation("Executing test case generation command: {Command}", generateCmd);
+            var rawOutput = await dockerPool.ExecCmdFromContainer(containerId!, generateCmd, cancellationToken);
+
+            logger.LogInformation("Test case generator raw output for PlanId={PlanId}: {Output}",
+                plan.PlanId, rawOutput);
+
+            // 3. Parse the JSON output from the script
+            var scriptOutput = ParseScriptOutput(rawOutput);
+
+            if (scriptOutput == null)
+            {
+                logger.LogError("Failed to parse test case generator output for PlanId={PlanId}", plan.PlanId);
+                return new TestCaseGenerationResult
+                {
+                    PlanId = plan.PlanId,
+                    Success = false,
+                    Error = $"Failed to parse script output: {rawOutput}"
+                };
+            }
+
+            if (!scriptOutput.IsSuccess)
+            {
+                logger.LogWarning("Test case generation failed for PlanId={PlanId}: {Error}",
+                    plan.PlanId, scriptOutput.Error);
+                return new TestCaseGenerationResult
+                {
+                    PlanId = plan.PlanId,
+                    Success = false,
+                    Error = scriptOutput.Error
+                };
+            }
+
+            logger.LogInformation(
+                "Test case generation succeeded for PlanId={PlanId}. TestCount={TestCount}, ZipPath={ZipPath}",
+                plan.PlanId, scriptOutput.TestCount, scriptOutput.ZipPath);
+            var s3Key = $"{_awsS3Settings.TestCasePrefix}/{planName}/test_cases.zip";
+            var s3UploadResult = await s3Service.UploadFileAsync("/app" + scriptOutput.ZipPath, s3Key);
+            return new TestCaseGenerationResult
+            {
+                PlanId = plan.PlanId,
+                Success = true,
+                S3Key = s3Key,
+                TestCount = scriptOutput.TestCount
+            };
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error generating test cases for PlanId={PlanId}", plan.PlanId);
+            return new TestCaseGenerationResult
+            {
+                PlanId = plan.PlanId,
+                Success = false,
+                Error = ex.Message
+            };
+        }
+        finally
+        {
+            // Clean up the test-case folder inside the container
+            var deleteCmd = commandBuilder.DeleteTestCaseFolderCommand(plan.PlanId);
+            await dockerPool.ExecCmdFromContainer(containerId!, deleteCmd, cancellationToken);
+            await dockerPool.ReturnContainerAsync(containerId!, cancellationToken);
+        }
+    }
+
+    private TestCaseScriptOutput? ParseScriptOutput(string rawOutput)
+    {
+        try
+        {
+            // The script outputs a single JSON line on stdout.
+            // Docker exec output may contain stderr mixed in, so find the JSON line.
+            var lines = rawOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            foreach (var line in lines)
+            {
+                var trimmed = line.Trim();
+                if (trimmed.StartsWith("{") && trimmed.EndsWith("}"))
+                    return JsonSerializer.Deserialize<TestCaseScriptOutput>(trimmed);
+            }
+
+            return null;
+        }
+        catch (JsonException ex)
+        {
+            logger.LogError(ex, "JSON parse error for script output: {Output}", rawOutput);
+            return null;
         }
     }
 

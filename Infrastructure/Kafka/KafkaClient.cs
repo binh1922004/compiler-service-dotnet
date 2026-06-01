@@ -6,19 +6,21 @@ using Confluent.Kafka;
 namespace CompilerService.Infrastructure.Kafka;
 
 /// <summary>
-/// Centralized Kafka client that wraps both consumer and producer.
-/// All Kafka communication goes through this single class.
+///     Centralized Kafka client that wraps both consumer and producer.
+///     All Kafka communication goes through this single class.
 /// </summary>
 public class KafkaClient : IKafkaClient
 {
     private readonly IConsumer<string, string> _consumer;
-    private readonly IProducer<string, string> _producer;
-    private readonly ILogger<KafkaClient> _logger;
+
     private readonly JsonSerializerOptions _jsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         Converters = { new JsonStringEnumConverter() }
     };
+
+    private readonly ILogger<KafkaClient> _logger;
+    private readonly IProducer<string, string> _producer;
 
     public KafkaClient(IConfiguration configuration, ILogger<KafkaClient> logger)
     {
@@ -49,7 +51,8 @@ public class KafkaClient : IKafkaClient
         return result;
     }
 
-    public async Task ProduceAsync<T>(string topic, string key, T message, CancellationToken cancellationToken = default)
+    public async Task ProduceAsync<T>(string topic, string key, T message,
+        CancellationToken cancellationToken = default)
     {
         var json = JsonSerializer.Serialize(message, _jsonOptions);
         var kafkaMessage = new Message<string, string>

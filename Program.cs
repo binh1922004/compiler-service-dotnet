@@ -31,6 +31,7 @@ builder.Services.AddSingleton<IFileService, FileService>();
 
 // Message Handlers
 builder.Services.AddSingleton<IMessageHandler<SubmissionRequest>, SubmissionHandler>();
+builder.Services.AddSingleton<IMessageHandler<TestCasePlan>, TestCaseGenerationHandler>();
 
 // Hosted Services
 builder.Services.AddHostedService<DockerStartupService>();

@@ -89,7 +89,7 @@ def run_solution(solution_file, input_data, time_limit, memory_limit):
                     return None, 0, 0, "CE"
             
             # File thực thi lúc này chắc chắn là đường dẫn tuyệt đối (vd: /app/judge/main.out)
-            exec_cmd = [exe_file]]
+            exec_cmd = [exe_file]
         else:
             return None, 0, 0, "CE"
         

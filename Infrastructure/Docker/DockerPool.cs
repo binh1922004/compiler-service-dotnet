@@ -7,17 +7,19 @@ namespace CompilerService.Infrastructure.Docker;
 
 public class DockerPool
 {
-    private readonly ILogger<DockerPool> _logger;
+    private const int MaxContainers = 5;
+    private readonly ConcurrentQueue<string> _availableContainers;
     private readonly DockerClient _client;
     private readonly string? _image;
-    private readonly string? _version;
+    private readonly ILogger<DockerPool> _logger;
+    private readonly string? _testCaseVolume;
     private readonly string? _problemVolume;
-    private readonly string? _submissionVolume;
-    private readonly ConcurrentQueue<string> _availableContainers;
+
     // Limit 5 threads can run at a time
     private readonly SemaphoreSlim _semaphore;
-    private const int MaxContainers = 5;
-    
+    private readonly string? _submissionVolume;
+    private readonly string? _version;
+
     public DockerPool(ILogger<DockerPool> logger, IConfiguration configuration, string os = "linux")
     {
         _logger = logger;
@@ -25,10 +27,11 @@ public class DockerPool
         _version = configuration["CompilerConfig:Version"];
         _problemVolume = configuration["CompilerConfig:ProblemVolume"];
         _submissionVolume = configuration["CompilerConfig:SubmissionVolume"];
-        
+        _testCaseVolume = configuration["CompilerConfig:TestCaseVolume"];
+
         _availableContainers = new ConcurrentQueue<string>();
         _semaphore = new SemaphoreSlim(MaxContainers);
-        
+
         if (os == "win")
         {
             _logger.LogInformation("Constructor: Starting Docker by using Windows");
@@ -44,12 +47,11 @@ public class DockerPool
                 .CreateClient();
         }
     }
-    
+
 
     public async Task InitializeAsync(int poolSize)
     {
         for (var i = 0; i < poolSize; i++)
-        {
             try
             {
                 _logger.LogInformation("Checking existing container {ContainerIndex}", i);
@@ -57,9 +59,7 @@ public class DockerPool
                 _logger.LogInformation("Container {ContainerIndex} was created", i);
 
                 if (!container.State.Running)
-                {
                     await _client.Containers.StartContainerAsync(container.ID, new ContainerStartParameters());
-                }
             }
             catch (DockerApiException)
             {
@@ -70,31 +70,30 @@ public class DockerPool
             {
                 _availableContainers.Enqueue(GetContainerName(i));
             }
-        }
-        
     }
 
     private async Task CreateContainer(int id)
     {
-        
         _logger.LogInformation("Creating Container {ContainerId}", id);
-        var container = await _client.Containers.CreateContainerAsync(new CreateContainerParameters()
+        var container = await _client.Containers.CreateContainerAsync(new CreateContainerParameters
         {
             Image = $"{_image}:{_version}",
             Name = GetContainerName(id),
             Tty = false,
             WorkingDir = "/work",
             User = "0:0",
-            HostConfig = new HostConfig()
+            HostConfig = new HostConfig
             {
                 NetworkMode = "none",
                 Memory = 512 * 1024 * 1024,
                 NanoCPUs = (long)1e9,
                 PidsLimit = 128,
                 ReadonlyRootfs = false,
-                Binds = [
+                Binds =
+                [
                     $"{_problemVolume}:/problems",
-                    $"{_submissionVolume}:/work"
+                    $"{_submissionVolume}:/work",
+                    $"{_testCaseVolume}:/test-case"
                 ]
             },
             Cmd = ["/bin/bash", "-c", "sleep infinity"]
@@ -109,36 +108,37 @@ public class DockerPool
     }
 
 
-    public async Task<string?> RentContainerAsync()
+    public virtual async Task<string?> RentContainerAsync()
     {
         await _semaphore.WaitAsync();
-        return _availableContainers.TryDequeue(out var container) ? 
-            container : 
-            throw new Exception("No available containers");
+        return _availableContainers.TryDequeue(out var container)
+            ? container
+            : throw new Exception("No available containers");
     }
-    
-    public Task ReturnContainerAsync(string containerId, CancellationToken cancellationToken = default)
+
+    public virtual Task ReturnContainerAsync(string containerId, CancellationToken cancellationToken = default)
     {
         _availableContainers.Enqueue(containerId);
         _semaphore.Release();
         return Task.CompletedTask;
     }
-    
-    
-    public async Task<string> ExecCmdFromContainer(string containerId, string exeCmd, CancellationToken cancellationToken = default)
+
+
+    public virtual async Task<string> ExecCmdFromContainer(string containerId, string exeCmd,
+        CancellationToken cancellationToken = default)
     {
         await _semaphore.WaitAsync(cancellationToken);
         try
         {
             var execCreateResponse = await _client.Exec.ExecCreateContainerAsync(containerId,
-                new ContainerExecCreateParameters()
+                new ContainerExecCreateParameters
                 {
                     AttachStdout = true,
                     AttachStderr = true,
                     Cmd = ["/bin/sh", "-lc", exeCmd],
-                    WorkingDir =  "/work",
+                    WorkingDir = "/work"
                 }, cancellationToken);
-        
+
             using var stream = await _client.Exec.StartAndAttachContainerExecAsync(
                 execCreateResponse.ID,
                 false, cancellationToken);
@@ -146,17 +146,18 @@ public class DockerPool
             var outputBuilder = new StringBuilder();
             var buffer = new byte[4096];
 
-            while (!cancellationToken.IsCancellationRequested) 
+            while (!cancellationToken.IsCancellationRequested)
             {
                 var result = await stream.ReadOutputAsync(buffer, 0, buffer.Length, cancellationToken);
-        
+
                 if (result.EOF)
                     break;
 
                 if (result.Count <= 0) continue;
-        
+
                 var text = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                outputBuilder.Append(text);
+                if (result.Target == MultiplexedStream.TargetStream.StandardOut)
+                    outputBuilder.Append(text);
             }
 
             var output = outputBuilder.ToString();
@@ -165,7 +166,7 @@ public class DockerPool
         }
         finally
         {
-            _semaphore.Release(); 
+            _semaphore.Release();
         }
     }
 }
