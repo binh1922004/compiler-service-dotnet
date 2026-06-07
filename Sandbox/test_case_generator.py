@@ -6,6 +6,10 @@ import subprocess
 import glob
 import zipfile
 import argparse
+import traceback
+
+# Maximum characters of stderr to include in error messages
+MAX_STDERR_LEN = 2000
 
 
 def _log(msg):
@@ -63,12 +67,29 @@ class BNOJTestCaseBuilder:
 
                     test_id += 1
 
-            _log(f"[*] Input generation successful. Parsed {test_id - 1} testcases into subfolders.")
-            return test_id - 1
+            total = test_id - 1
+            if total == 0:
+                raise RuntimeError(
+                    "Input generator produced no test cases. "
+                    f"stdout was empty or contained no '---TEST_BOUNDARY---' delimiters.\n"
+                    f"Generator stdout (first 500 chars): {output_content[:500]!r}"
+                )
+
+            _log(f"[*] Input generation successful. Parsed {total} testcases into subfolders.")
+            return total
 
         except subprocess.CalledProcessError as e:
-            _log(f"[ERROR] Generator crashed:\n{e.stderr}")
-            raise RuntimeError(f"Input generator failed with exit code {e.returncode}")
+            stderr_text = (e.stderr or "").strip()[:MAX_STDERR_LEN]
+            stdout_text = (e.stdout or "").strip()[:500]
+            detail = (
+                f"Input generator failed with exit code {e.returncode}.\n"
+                f"Command: {self.generator_cmd}\n"
+                f"stderr:\n{stderr_text}"
+            )
+            if stdout_text:
+                detail += f"\nstdout (first 500 chars):\n{stdout_text}"
+            _log(f"[ERROR] Generator crashed:\n{detail}")
+            raise RuntimeError(detail)
 
     def generate_outputs(self):
         """Finds all test.inp files in subfolders and pipes them through the solution code."""
@@ -84,26 +105,55 @@ class BNOJTestCaseBuilder:
         for inp_path in sorted(inp_files):
             # Write test.out in the exact same directory as the test.inp
             tc_folder = os.path.dirname(inp_path)
+            tc_name = os.path.basename(tc_folder)
             out_path = os.path.join(tc_folder, "test.out")
 
+            # Read input content for error reporting
             try:
-                with open(inp_path, 'r') as fin, open(out_path, 'w') as fout:
-                    subprocess.run(
+                with open(inp_path, 'r') as f:
+                    input_preview = f.read(300)
+            except Exception:
+                input_preview = "<could not read input>"
+
+            try:
+                with open(inp_path, 'r') as fin:
+                    proc = subprocess.run(
                         self.solution_cmd,
                         stdin=fin,
-                        stdout=fout,
+                        capture_output=True,
+                        text=True,
                         cwd=self.target_folder,
                         shell=True,
                         timeout=self.time_limit,
                         check=True
                     )
+                # Write stdout to the output file
+                with open(out_path, 'w') as fout:
+                    fout.write(proc.stdout)
                 success_count += 1
+
             except subprocess.TimeoutExpired:
-                _log(f"[ERROR] Time limit exceeded on {os.path.basename(tc_folder)}")
-                raise RuntimeError(f"Solution failed with exit code {e.returncode} on {os.path.basename(tc_folder)}")
+                detail = (
+                    f"Solution exceeded time limit ({self.time_limit}s) on {tc_name}.\n"
+                    f"Command: {self.solution_cmd}\n"
+                    f"Input preview:\n{input_preview}"
+                )
+                _log(f"[ERROR] {detail}")
+                raise RuntimeError(detail)
+
             except subprocess.CalledProcessError as e:
-                _log(f"[ERROR] Solution crashed on {os.path.basename(tc_folder)}")
-                raise RuntimeError(f"Solution failed with exit code {e.returncode} on {os.path.basename(tc_folder)}")
+                stderr_text = (e.stderr or "").strip()[:MAX_STDERR_LEN]
+                stdout_text = (e.stdout or "").strip()[:500]
+                detail = (
+                    f"Solution failed with exit code {e.returncode} on {tc_name}.\n"
+                    f"Command: {self.solution_cmd}\n"
+                    f"stderr:\n{stderr_text}"
+                )
+                if stdout_text:
+                    detail += f"\nstdout (first 500 chars):\n{stdout_text}"
+                detail += f"\nInput preview:\n{input_preview}"
+                _log(f"[ERROR] {detail}")
+                raise RuntimeError(detail)
 
         _log(f"[*] Successfully generated {success_count}/{len(inp_files)} outputs.")
 
@@ -157,8 +207,20 @@ if __name__ == "__main__":
         }))
 
     except Exception as e:
+        # Determine which phase failed based on the error context
+        error_msg = str(e)
+        if "Input generator" in error_msg or "no test cases" in error_msg.lower():
+            phase = "input_generation"
+        elif "Solution" in error_msg or "time limit" in error_msg.lower():
+            phase = "output_generation"
+        else:
+            phase = "unknown"
+
         print(json.dumps({
             "status": "failed",
-            "error": str(e)
+            "phase": phase,
+            "error": error_msg,
+            "errorType": type(e).__name__,
+            "traceback": traceback.format_exc()
         }))
         sys.exit(1)

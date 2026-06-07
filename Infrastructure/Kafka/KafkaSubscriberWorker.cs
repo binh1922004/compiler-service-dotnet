@@ -25,7 +25,6 @@ public class KafkaSubscriberWorker(
     };
 
     private readonly KafkaSettings _kafkaSettings = kafkaSettings.Value;
-
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {
         return Task.Run(() => SubscribeLoop(stoppingToken), stoppingToken);
@@ -33,9 +32,8 @@ public class KafkaSubscriberWorker(
 
     private async Task SubscribeLoop(CancellationToken stoppingToken)
     {
-        kafkaClient.Subscribe(_kafkaSettings.SubmissionTopic);
-        kafkaClient.Subscribe(_kafkaSettings.TestCaseGenerationRequestTopic);
-
+        string[] topics = [_kafkaSettings.SubmissionTopic, _kafkaSettings.TestCaseGenerationRequestTopic];
+        kafkaClient.Subscribe(topics);
         while (!stoppingToken.IsCancellationRequested)
             try
             {

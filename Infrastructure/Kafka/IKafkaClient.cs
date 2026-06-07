@@ -10,7 +10,7 @@ public interface IKafkaClient : IDisposable
     /// <summary>
     ///     Subscribe to a Kafka topic and start consuming messages.
     /// </summary>
-    void Subscribe(string topic);
+    void Subscribe(string[] topic);
 
     /// <summary>
     ///     Consume a single message from the subscribed topic.

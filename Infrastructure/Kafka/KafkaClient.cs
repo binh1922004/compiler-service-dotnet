@@ -39,7 +39,7 @@ public class KafkaClient : IKafkaClient
         _logger.LogInformation("KafkaClient initialized");
     }
 
-    public void Subscribe(string topic)
+    public void Subscribe(string[] topic)
     {
         _consumer.Subscribe(topic);
         _logger.LogInformation("Subscribed to topic '{Topic}'", topic);

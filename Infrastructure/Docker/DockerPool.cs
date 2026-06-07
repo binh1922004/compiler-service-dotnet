@@ -127,6 +127,13 @@ public class DockerPool
     public virtual async Task<string> ExecCmdFromContainer(string containerId, string exeCmd,
         CancellationToken cancellationToken = default)
     {
+        var (stdout, _) = await ExecCmdFromContainerWithStderr(containerId, exeCmd, cancellationToken);
+        return stdout;
+    }
+
+    public virtual async Task<(string Stdout, string Stderr)> ExecCmdFromContainerWithStderr(string containerId,
+        string exeCmd, CancellationToken cancellationToken = default)
+    {
         await _semaphore.WaitAsync(cancellationToken);
         try
         {
@@ -144,6 +151,7 @@ public class DockerPool
                 false, cancellationToken);
 
             var outputBuilder = new StringBuilder();
+            var errorBuilder = new StringBuilder();
             var buffer = new byte[4096];
 
             while (!cancellationToken.IsCancellationRequested)
@@ -158,11 +166,15 @@ public class DockerPool
                 var text = Encoding.UTF8.GetString(buffer, 0, result.Count);
                 if (result.Target == MultiplexedStream.TargetStream.StandardOut)
                     outputBuilder.Append(text);
+                else if (result.Target == MultiplexedStream.TargetStream.StandardError)
+                    errorBuilder.Append(text);
             }
 
             var output = outputBuilder.ToString();
-            _logger.LogDebug("Exec output for [{Command}]: {DockerOutput}", exeCmd, output);
-            return output;
+            var error = errorBuilder.ToString();
+            _logger.LogDebug("Exec output for [{Command}]: stdout={DockerOutput}, stderr={DockerError}",
+                exeCmd, output, error);
+            return (output, error);
         }
         finally
         {

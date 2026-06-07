@@ -12,5 +12,11 @@ public class TestCaseScriptOutput
 
     [JsonPropertyName("error")] public string? Error { get; set; }
 
+    [JsonPropertyName("phase")] public string? Phase { get; set; }
+
+    [JsonPropertyName("errorType")] public string? ErrorType { get; set; }
+
+    [JsonPropertyName("traceback")] public string? Traceback { get; set; }
+
     public bool IsSuccess => Status == "success";
 }

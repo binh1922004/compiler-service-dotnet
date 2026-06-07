@@ -70,13 +70,17 @@ public class CompileService(
             var createFilesCmd = commandBuilder.CreateTestCaseFilesCommand(planName, plan.InputCode, plan.OutPutCode);
             await dockerPool.ExecCmdFromContainer(containerId!, createFilesCmd, cancellationToken);
 
-            // 2. Run the test_case_generator.py script
+            // 2. Run the test_case_generator.py script (capture both stdout and stderr)
             var generateCmd = commandBuilder.GenerateTestCaseCommand(planName);
             logger.LogInformation("Executing test case generation command: {Command}", generateCmd);
-            var rawOutput = await dockerPool.ExecCmdFromContainer(containerId!, generateCmd, cancellationToken);
+            var (rawOutput, rawStderr) =
+                await dockerPool.ExecCmdFromContainerWithStderr(containerId!, generateCmd, cancellationToken);
 
-            logger.LogInformation("Test case generator raw output for PlanId={PlanId}: {Output}",
+            logger.LogInformation("Test case generator stdout for PlanId={PlanId}: {Output}",
                 plan.PlanId, rawOutput);
+            if (!string.IsNullOrWhiteSpace(rawStderr))
+                logger.LogWarning("Test case generator stderr for PlanId={PlanId}: {Stderr}",
+                    plan.PlanId, rawStderr);
 
             // 3. Parse the JSON output from the script
             var scriptOutput = ParseScriptOutput(rawOutput);
@@ -88,19 +92,22 @@ public class CompileService(
                 {
                     PlanId = plan.PlanId,
                     Success = false,
-                    Error = $"Failed to parse script output: {rawOutput}"
+                    Version = plan.Version,
+                    Error = $"Failed to parse script output.\nstdout: {rawOutput}\nstderr: {rawStderr}"
                 };
             }
 
             if (!scriptOutput.IsSuccess)
             {
+                var errorDetail = BuildDetailedError(scriptOutput, rawStderr);
                 logger.LogWarning("Test case generation failed for PlanId={PlanId}: {Error}",
-                    plan.PlanId, scriptOutput.Error);
+                    plan.PlanId, errorDetail);
                 return new TestCaseGenerationResult
                 {
                     PlanId = plan.PlanId,
                     Success = false,
-                    Error = scriptOutput.Error
+                    Version = plan.Version,
+                    Error = errorDetail
                 };
             }
 
@@ -114,6 +121,7 @@ public class CompileService(
                 PlanId = plan.PlanId,
                 Success = true,
                 S3Key = s3Key,
+                Version = plan.Version,
                 TestCount = scriptOutput.TestCount
             };
         }
@@ -124,6 +132,7 @@ public class CompileService(
             {
                 PlanId = plan.PlanId,
                 Success = false,
+                Version = plan.Version,
                 Error = ex.Message
             };
         }
@@ -157,6 +166,32 @@ public class CompileService(
             logger.LogError(ex, "JSON parse error for script output: {Output}", rawOutput);
             return null;
         }
+    }
+
+    /// <summary>
+    /// Builds a detailed, human-readable error string from the script's structured output.
+    /// </summary>
+    private static string BuildDetailedError(TestCaseScriptOutput scriptOutput, string dockerStderr)
+    {
+        var parts = new List<string>();
+
+        // Phase info (input_generation / output_generation)
+        if (!string.IsNullOrWhiteSpace(scriptOutput.Phase))
+            parts.Add($"[Phase: {scriptOutput.Phase}]");
+
+        // Error type (RuntimeError, FileNotFoundError, etc.)
+        if (!string.IsNullOrWhiteSpace(scriptOutput.ErrorType))
+            parts.Add($"[Type: {scriptOutput.ErrorType}]");
+
+        // The main error message (includes stderr from subprocess, input preview, etc.)
+        if (!string.IsNullOrWhiteSpace(scriptOutput.Error))
+            parts.Add(scriptOutput.Error);
+
+        // Python traceback from the script itself
+        if (!string.IsNullOrWhiteSpace(scriptOutput.Traceback))
+            parts.Add($"--- Python Traceback ---\n{scriptOutput.Traceback}");
+        
+        return string.Join("\n", parts);
     }
 
     private async Task<string> JudgeCode(SubmissionRequest submissionRequest, string containerId,
