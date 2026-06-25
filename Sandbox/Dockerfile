@@ -31,14 +31,12 @@ RUN useradd -m -s /bin/bash judgeuser && \
 
 # Copy scripts
 COPY run_and_measure.sh /scripts/run_and_measure.sh
-COPY wrapper.cpp wrapper.cpp
 COPY judge.py /scripts/judge.py
 COPY test_case_generator.py /scripts/test_case_generator.py
 
 # Chuyển đổi định dạng dòng (đề phòng file từ Windows) và phân quyền
 RUN dos2unix /scripts/run_and_measure.sh && \
-    chmod +x /scripts/*.sh && \
-    chmod +x wrapper.cpp
+    chmod +x /scripts/*.sh
 
 WORKDIR /work
 USER judgeuser
