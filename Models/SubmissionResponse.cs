@@ -21,4 +21,7 @@ public class SubmissionResponse
     
     [JsonPropertyName("max_memory_mb")]
     public double Memory { get; set; }
+    
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
 }

@@ -56,11 +56,42 @@ def find_testcases(problem_id):
     
     return testcases, None
 
-def set_limits(time_limit_sec, memory_limit_mb):
+def set_limits(time_limit_sec, memory_limit_mb, ext):
     """Thiết lập giới hạn tài nguyên"""
     resource.setrlimit(resource.RLIMIT_CPU, (time_limit_sec, time_limit_sec + 1))
-    memory_bytes = memory_limit_mb * 1024 * 1024
-    resource.setrlimit(resource.RLIMIT_AS, (memory_bytes, memory_bytes))
+    if ext != 'js': 
+        memory_bytes = memory_limit_mb * 1024 * 1024
+        resource.setrlimit(resource.RLIMIT_AS, (memory_bytes, memory_bytes))
+
+def extract_clean_error(stderr, ext):
+    """Trích xuất thông báo lỗi an toàn, bỏ qua đường dẫn hệ thống"""
+    if not stderr:
+        return "Unknown Error"
+
+    lines = [line.strip() for line in stderr.splitlines() if line.strip()]
+    if not lines:
+        return "Unknown Error"
+
+    try:
+        if ext == '.py':
+            return lines[-1]
+        elif ext == '.js':
+            for line in lines:
+                if "Error:" in line:
+                    return line
+            return lines[0]
+        elif ext == '.cpp':
+            for line in lines:
+                if "error:" in line.lower():
+                    parts = line.split("error:", 1)
+                    if len(parts) > 1:
+                        return f"Compile Error: {parts[1].strip()}"
+                    return line
+            return lines[0][:100]
+        else:
+            return lines[0][:100]
+    except Exception:
+        return "Error parsing logs"
 
 def run_solution(solution_file, input_data, time_limit, memory_limit):
     ext = Path(solution_file).suffix
@@ -72,7 +103,7 @@ def run_solution(solution_file, input_data, time_limit, memory_limit):
         elif ext == '.pl':
             exec_cmd = ['perl', solution_file]
         elif ext == '.js':
-            exec_cmd = ['node', solution_file]
+            exec_cmd = ['node', '/scripts/runner.js', solution_file]
         elif ext == '.rb':
             exec_cmd = ['ruby', solution_file] 
         elif ext == '.cpp':
@@ -86,12 +117,12 @@ def run_solution(solution_file, input_data, time_limit, memory_limit):
                     capture_output=True, text=True, timeout=30
                 )
                 if compile_result.returncode != 0:
-                    return None, 0, 0, "CE"
+                    clean_msg = extract_clean_error(compile_result.stderr, ext)
+                    return None, 0, 0, "CE", clean_msg
             
-            # File thực thi lúc này chắc chắn là đường dẫn tuyệt đối (vd: /app/judge/main.out)
             exec_cmd = [exe_file]
         else:
-            return None, 0, 0, "CE"
+            return None, 0, 0, "CE", None
         
         cmd = ['/usr/bin/time', '-f', '%e %M', '-o', time_output] + exec_cmd
         start_time = time.time()
@@ -99,7 +130,7 @@ def run_solution(solution_file, input_data, time_limit, memory_limit):
         result = subprocess.run(
             cmd, input=input_data, capture_output=True, text=True,
             timeout=time_limit + 1,
-            preexec_fn=lambda: set_limits(time_limit, memory_limit)
+            preexec_fn=lambda: set_limits(time_limit, memory_limit, ext)
         )
         
         wall_time = time.time() - start_time
@@ -117,20 +148,27 @@ def run_solution(solution_file, input_data, time_limit, memory_limit):
 
         if result.returncode != 0:
             if result.returncode in [152, 158] or elapsed >= time_limit:
-                return None, elapsed, memory_kb, "TLE"
+                return None, elapsed, memory_kb, "TLE", None
             if result.returncode == 137:
-                return None, elapsed, memory_kb, "MLE"
-            return None, elapsed, memory_kb, "RTE"
+                return None, elapsed, memory_kb, "MLE", None
+            
+            clean_msg = extract_clean_error(result.stderr, ext)
+            
+            # Xử lý đặc biệt cho SyntaxError của Python/JS tại runtime
+            if ext in ['.py', '.js'] and ("SyntaxError" in clean_msg or "IndentationError" in clean_msg):
+                return None, elapsed, memory_kb, "CE", clean_msg
+            else:
+                return None, elapsed, memory_kb, "RTE", clean_msg
         
-        if elapsed > time_limit: return None, elapsed, memory_kb, "TLE"
-        if (memory_kb / 1024) > memory_limit: return None, elapsed, memory_kb, "MLE"
+        if elapsed > time_limit: return None, elapsed, memory_kb, "TLE", None
+        if (memory_kb / 1024) > memory_limit: return None, elapsed, memory_kb, "MLE", None
         
-        return result.stdout, elapsed, memory_kb, None
+        return result.stdout, elapsed, memory_kb, "AC", None
         
     except subprocess.TimeoutExpired:
         return None, time_limit + 0.1, 0, "TLE"
-    except Exception:
-        return None, 0, 0, "RTE"
+    except Exception as e:
+        return None, 0, 0, f"RTE ({str(e)})"
 
 def compare_output(actual, expected):
     actual_lines = [line.rstrip() for line in actual.strip().splitlines() if line.strip()]
@@ -153,23 +191,23 @@ def main():
     
     testcases, error = find_testcases(problem_id)
     if error or not testcases:
-        print(json.dumps({"status": "ERROR", "error": error or "No testcasesfound"}, indent=2))
+        print(json.dumps({"status": "ERROR", "error": error or "No testcases found"}, indent=2))
         sys.exit(1)
 
     passed, max_time, max_memory = 0, 0, 0
     test_results = []
     overall_status = "AC"
-
+    overall_error_msg = ""
     for tc in testcases:
         with open(tc['inp'], 'r') as f: input_data = f.read()
         with open(tc['out'], 'r') as f: expected_output = f.read()
         
-        actual_output, elapsed, memory_kb, error = run_solution(solution_file, input_data, time_limit, memory_limit)
+        actual_output, elapsed, memory_kb, test_status, error_msg = run_solution(solution_file, input_data, time_limit, memory_limit)
         
         max_time = max(max_time, elapsed)
         max_memory = max(max_memory, memory_kb)
         
-        if error: status = error
+        if error_msg: status = test_status
         elif compare_output(actual_output, expected_output): status = "AC"
         else: status = "WA"
 
@@ -180,6 +218,7 @@ def main():
             passed += 1
         else:
             if overall_status == "AC": overall_status = status
+            if error_msg: overall_error_msg = error_msg
             if is_icpc: break  # Chế độ ICPC: dừng ngay khi sai
 
     result = {
@@ -188,6 +227,7 @@ def main():
         "total": len(testcases),
         "max_time": round(max_time, 3),
         "max_memory_mb": round(max_memory / 1024, 2),
+        "error": overall_error_msg
 #         "tests": test_results
     }
     

@@ -34,6 +34,13 @@ public class CompilerServiceTests
         _dockerPool.ReturnContainerAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
         _dockerPool.ExecCmdFromContainer(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(string.Empty));
+        _dockerPool.ExecCmdFromContainerWithStderr(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo => 
+            {
+                // Tests will override this if they want to, but if they don't, 
+                // we can return string.Empty by default.
+                return Task.FromResult((string.Empty, string.Empty));
+            });
 
         _fileService = Substitute.For<IFileService>();
         _s3Service = Substitute.For<IS3Service>();
@@ -95,12 +102,11 @@ public class CompilerServiceTests
         var plan = CreateTestCasePlan();
         var scriptJson = """{"status":"success","zipPath":"/test-case/plan-123-v1/testcases.zip","testCount":5}""";
 
-        // The second ExecCmdFromContainer call (the generator script) returns JSON
         _dockerPool.ExecCmdFromContainer(FakeContainerId, Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(
-                Task.FromResult(string.Empty),   // CreateTestCaseFilesCommand
-                Task.FromResult(scriptJson),      // GenerateTestCaseCommand
-                Task.FromResult(string.Empty));   // DeleteTestCaseFolderCommand
+            .Returns(Task.FromResult(string.Empty));
+
+        _dockerPool.ExecCmdFromContainerWithStderr(FakeContainerId, Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .ReturnsForAnyArgs(Task.FromResult((scriptJson, string.Empty)));
 
         // Act
         var result = await _sut.GenerateTestCases(plan, CancellationToken.None);
@@ -149,9 +155,10 @@ public class CompilerServiceTests
         // Act
         await _sut.GenerateTestCases(plan, CancellationToken.None);
 
-        // Assert — 3 calls: create files, run generator, delete folder
-        await _dockerPool.Received(3)
+        await _dockerPool.Received(2)
             .ExecCmdFromContainer(FakeContainerId, Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _dockerPool.Received(1)
+            .ExecCmdFromContainerWithStderr(FakeContainerId, Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     // ─────────────────────────────────────────────────
@@ -166,10 +173,10 @@ public class CompilerServiceTests
         var scriptJson = """{"status":"failed","error":"Input generator failed with exit code 1"}""";
 
         _dockerPool.ExecCmdFromContainer(FakeContainerId, Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(
-                Task.FromResult(string.Empty),
-                Task.FromResult(scriptJson),
-                Task.FromResult(string.Empty));
+            .ReturnsForAnyArgs(Task.FromResult(string.Empty));
+
+        _dockerPool.ExecCmdFromContainerWithStderr(FakeContainerId, Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .ReturnsForAnyArgs(Task.FromResult((scriptJson, string.Empty)));
 
         // Act
         var result = await _sut.GenerateTestCases(plan, CancellationToken.None);
@@ -189,10 +196,10 @@ public class CompilerServiceTests
         const string garbageOutput = "Segmentation fault (core dumped)";
 
         _dockerPool.ExecCmdFromContainer(FakeContainerId, Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(
-                Task.FromResult(string.Empty),
-                Task.FromResult(garbageOutput),
-                Task.FromResult(string.Empty));
+            .Returns(Task.FromResult(string.Empty));
+
+        _dockerPool.ExecCmdFromContainerWithStderr(FakeContainerId, Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .ReturnsForAnyArgs(Task.FromResult((garbageOutput, string.Empty)));
 
         // Act
         var result = await _sut.GenerateTestCases(plan, CancellationToken.None);
@@ -214,10 +221,10 @@ public class CompilerServiceTests
             """;
 
         _dockerPool.ExecCmdFromContainer(FakeContainerId, Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(
-                Task.FromResult(string.Empty),
-                Task.FromResult(mixedOutput),
-                Task.FromResult(string.Empty));
+            .Returns(Task.FromResult(string.Empty));
+
+        _dockerPool.ExecCmdFromContainerWithStderr(FakeContainerId, Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .ReturnsForAnyArgs(Task.FromResult((mixedOutput, string.Empty)));
 
         // Act
         var result = await _sut.GenerateTestCases(plan, CancellationToken.None);
@@ -234,10 +241,10 @@ public class CompilerServiceTests
         var plan = CreateTestCasePlan();
 
         _dockerPool.ExecCmdFromContainer(FakeContainerId, Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(
-                Task.FromResult(string.Empty),
-                Task.FromResult(string.Empty),
-                Task.FromResult(string.Empty));
+            .Returns(Task.FromResult(string.Empty));
+
+        _dockerPool.ExecCmdFromContainerWithStderr(FakeContainerId, Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .ReturnsForAnyArgs(Task.FromResult((string.Empty, string.Empty)));
 
         // Act
         var result = await _sut.GenerateTestCases(plan, CancellationToken.None);
@@ -259,11 +266,10 @@ public class CompilerServiceTests
 
         var callCount = 0;
         _dockerPool.ExecCmdFromContainer(FakeContainerId, Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(_ =>
+            .Returns(callInfo =>
             {
                 callCount++;
-                // Throw on the 1st call (CreateTestCaseFilesCommand), let cleanup succeed
-                if (callCount == 1) throw new Exception("Container OOM killed");
+                if (callCount == 1) return Task.FromException<string>(new Exception("Container OOM killed"));
                 return Task.FromResult(string.Empty);
             });
 
@@ -296,8 +302,10 @@ public class CompilerServiceTests
         await _sut.GenerateTestCases(plan, CancellationToken.None);
 
         // Assert — cleanup (3rd exec) and return container should always happen
-        await _dockerPool.Received(3)
+        await _dockerPool.Received(2)
             .ExecCmdFromContainer(FakeContainerId, Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _dockerPool.Received(1)
+            .ExecCmdFromContainerWithStderr(FakeContainerId, Arg.Any<string>(), Arg.Any<CancellationToken>());
         await _dockerPool.Received(1).ReturnContainerAsync(FakeContainerId, Arg.Any<CancellationToken>());
     }
 
@@ -332,7 +340,7 @@ public class CompilerServiceTests
         await _sut.GenerateTestCases(plan, CancellationToken.None);
 
         // Assert — the generator command should contain the versioned plan name
-        await _dockerPool.Received(1).ExecCmdFromContainer(
+        await _dockerPool.Received(1).ExecCmdFromContainerWithStderr(
             FakeContainerId,
             Arg.Is<string>(cmd => cmd.Contains(expectedPlanName) && cmd.Contains("test_case_generator.py")),
             Arg.Any<CancellationToken>());
@@ -354,8 +362,10 @@ public class CompilerServiceTests
         _dockerPool.ExecCmdFromContainer(FakeContainerId, Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(
                 Task.FromResult(string.Empty),  // CreateFile
-                Task.FromResult(judgeJson),      // JudgeCode
                 Task.FromResult(string.Empty));  // DeleteSubmissionFolder
+
+        _dockerPool.ExecCmdFromContainerWithStderr(FakeContainerId, Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .ReturnsForAnyArgs(Task.FromResult((judgeJson, string.Empty))); // JudgeCode
 
         // Act
         var result = await _sut.SubmitCode(request, CancellationToken.None);
@@ -380,8 +390,10 @@ public class CompilerServiceTests
         _dockerPool.ExecCmdFromContainer(FakeContainerId, Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(
                 Task.FromResult(string.Empty),
-                Task.FromResult(judgeJson),
                 Task.FromResult(string.Empty));
+
+        _dockerPool.ExecCmdFromContainerWithStderr(FakeContainerId, Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .ReturnsForAnyArgs(Task.FromResult((judgeJson, string.Empty)));
 
         // Act
         await _sut.SubmitCode(request, CancellationToken.None);
@@ -402,8 +414,10 @@ public class CompilerServiceTests
         _dockerPool.ExecCmdFromContainer(FakeContainerId, Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(
                 Task.FromResult(string.Empty),
-                Task.FromResult(judgeJson),
                 Task.FromResult(string.Empty));
+
+        _dockerPool.ExecCmdFromContainerWithStderr(FakeContainerId, Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .ReturnsForAnyArgs(Task.FromResult((judgeJson, string.Empty)));
 
         // Act
         await _sut.SubmitCode(request, CancellationToken.None);
@@ -417,31 +431,26 @@ public class CompilerServiceTests
     // ─────────────────────────────────────────────────
 
     [Fact]
-    public async Task SubmitCode_JudgeThrows_ReturnsNullAndReturnsContainer()
+    public async Task SubmitCode_JudgeThrows_ReturnsIEResultAndReturnsContainer()
     {
         // Arrange
         var request = CreateSubmissionRequest();
         _fileService.FolderExists(Arg.Any<string>()).Returns(true);
 
-        var callCount = 0;
-        _dockerPool.ExecCmdFromContainer(FakeContainerId, Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(_ =>
-            {
-                callCount++;
-                if (callCount == 2) throw new Exception("Timeout");
-                return Task.FromResult(string.Empty);
-            });
+        _dockerPool.ExecCmdFromContainerWithStderr(FakeContainerId, Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<(string Stdout, string Stderr)>(new Exception("Timeout")));
 
         // Act
         var result = await _sut.SubmitCode(request, CancellationToken.None);
 
         // Assert
-        Assert.Null(result);
+        Assert.NotNull(result);
+        Assert.Equal("IE", result.Status);
         await _dockerPool.Received(1).ReturnContainerAsync(FakeContainerId, Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task SubmitCode_InvalidJudgeJson_ReturnsNull()
+    public async Task SubmitCode_InvalidJudgeJson_ReturnsIEResult()
     {
         // Arrange
         var request = CreateSubmissionRequest();
@@ -450,14 +459,19 @@ public class CompilerServiceTests
         _dockerPool.ExecCmdFromContainer(FakeContainerId, Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(
                 Task.FromResult(string.Empty),
-                Task.FromResult("not valid json {{{"),
                 Task.FromResult(string.Empty));
+
+        _dockerPool.ExecCmdFromContainerWithStderr(FakeContainerId, Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .ReturnsForAnyArgs(Task.FromResult(("not valid json {{{", "some stderr content")));
 
         // Act
         var result = await _sut.SubmitCode(request, CancellationToken.None);
 
-        // Assert — JsonSerializer.Deserialize throws, caught by the outer catch
-        Assert.Null(result);
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal("IE", result.Status);
+        Assert.Contains("not valid json {{{", result.Error);
+        Assert.Contains("some stderr content", result.Error);
     }
 
     // ─────────────────────────────────────────────────

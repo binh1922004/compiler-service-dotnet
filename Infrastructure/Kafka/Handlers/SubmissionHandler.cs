@@ -21,12 +21,11 @@ public class SubmissionHandler(
         try
         {
             var result = await compileService.SubmitCode(message, cancellationToken);
-            if (result != null)
-                await kafkaClient.ProduceAsync(_kafkaSettings.ResultTopic, message.Id, result, cancellationToken);
+            await kafkaClient.ProduceAsync(_kafkaSettings.ResultTopic, message.Id, result!, cancellationToken);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to process submission {SubmissionId}", message.Id);
+            logger.LogError(ex, "Infrastructure failure processing submission {SubmissionId}", message.Id);
 
             var errorResponse = new SubmissionResponse
             {

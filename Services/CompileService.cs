@@ -37,17 +37,53 @@ public class CompileService(
             }
 
             await CreateFile(submissionRequest, containerId!, cancellationToken);
-            var judgeOutput = await JudgeCode(submissionRequest, containerId!, cancellationToken);
-            logger.LogInformation("Judge output for submission {SubmissionId}: {Output}", submissionRequest.Id,
-                judgeOutput);
-            var jsonObject = JsonSerializer.Deserialize<SubmissionResponse>(judgeOutput);
-            if (jsonObject != null) jsonObject.Id = submissionRequest.Id;
-            return jsonObject;
+            var (judgeStdout, judgeStderr) = await JudgeCode(submissionRequest, containerId!, cancellationToken);
+            logger.LogInformation("Judge output for submission {SubmissionId}: stdout={Stdout}, stderr={Stderr}", submissionRequest.Id,
+                judgeStdout, judgeStderr);
+            
+            SubmissionResponse? jsonObject = null;
+            try
+            {
+                jsonObject = JsonSerializer.Deserialize<SubmissionResponse>(judgeStdout);
+            }
+            catch (JsonException)
+            {
+                // Ignored, handled below
+            }
+
+            if (jsonObject != null)
+            {
+                jsonObject.Id = submissionRequest.Id;
+                if (jsonObject.Status == "ERROR")
+                {
+                    jsonObject.Status = "IE";
+                }
+                return jsonObject;
+            }
+
+            return new SubmissionResponse
+            {
+                Id = submissionRequest.Id,
+                Status = "IE",
+                Error = $"Failed to parse judge output.\nstdout: {judgeStdout}\nstderr: {judgeStderr}",
+                Passed = 0,
+                Total = 0,
+                Time = 0,
+                Memory = 0
+            };
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error submitting code for submission {SubmissionId}", submissionRequest.Id);
-            return null;
+            logger.LogError(ex, "Docker/infrastructure error for submission {SubmissionId}", submissionRequest.Id);
+            return new SubmissionResponse
+            {
+                Id = submissionRequest.Id,
+                Status = "IE",
+                Passed = 0,
+                Total = 0,
+                Time = 0,
+                Memory = 0
+            };
         }
         finally
         {
@@ -194,11 +230,11 @@ public class CompileService(
         return string.Join("\n", parts);
     }
 
-    private async Task<string> JudgeCode(SubmissionRequest submissionRequest, string containerId,
+    private async Task<(string Stdout, string Stderr)> JudgeCode(SubmissionRequest submissionRequest, string containerId,
         CancellationToken cancellationToken)
     {
         var execCmd = commandBuilder.CreateCompileCommand(submissionRequest);
-        return await dockerPool.ExecCmdFromContainer(containerId, execCmd, cancellationToken);
+        return await dockerPool.ExecCmdFromContainerWithStderr(containerId, execCmd, cancellationToken);
     }
 
     private async Task CreateFile(SubmissionRequest submissionRequest, string containerId,

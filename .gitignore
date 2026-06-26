@@ -55,3 +55,14 @@ nunit-*.xml
 
 # Idea
 .idea/
+
+
+.DS_Store
+
+# Kafka enviroment
+Configuration/kafka_server_jaas.conf
+
+
+# Openspec
+.continue/
+.agent

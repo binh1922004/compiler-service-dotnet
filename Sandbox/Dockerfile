@@ -6,7 +6,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 
 # Cài đặt các thư viện hệ thống cần thiết
-# Lưu ý: python3 và pip đã có sẵn, không cần cài lại
+# Thêm curl và ca-certificates để tải cài đặt Node.js
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     g++ \
@@ -16,6 +16,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     dos2unix \
     vim \
     ruby \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Cài đặt Node.js (Phiên bản 20.x LTS)
+# Gói nodejs từ NodeSource đã bao gồm sẵn npm
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 # Cài đặt các thư viện Python
@@ -30,13 +38,9 @@ RUN useradd -m -s /bin/bash judgeuser && \
     chown -R judgeuser:judgeuser /work
 
 # Copy scripts
-COPY run_and_measure.sh /scripts/run_and_measure.sh
 COPY judge.py /scripts/judge.py
 COPY test_case_generator.py /scripts/test_case_generator.py
-
-# Chuyển đổi định dạng dòng (đề phòng file từ Windows) và phân quyền
-RUN dos2unix /scripts/run_and_measure.sh && \
-    chmod +x /scripts/*.sh
+COPY runner.js /scripts/runner.js
 
 WORKDIR /work
 USER judgeuser
