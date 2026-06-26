@@ -14,6 +14,7 @@ public class KafkaSubscriberWorker(
     IKafkaClient kafkaClient,
     IMessageHandler<SubmissionRequest> submissionHandler,
     IMessageHandler<TestCasePlan> testCaseGenerationHandler,
+    IMessageHandler<PreTestRequest> preTestHandler,
     ILogger<KafkaSubscriberWorker> logger,
     IOptions<KafkaSettings> kafkaSettings)
     : BackgroundService
@@ -32,7 +33,12 @@ public class KafkaSubscriberWorker(
 
     private async Task SubscribeLoop(CancellationToken stoppingToken)
     {
-        string[] topics = [_kafkaSettings.SubmissionTopic, _kafkaSettings.TestCaseGenerationRequestTopic];
+        string[] topics =
+        [
+            _kafkaSettings.SubmissionTopic,
+            _kafkaSettings.TestCaseGenerationRequestTopic,
+            _kafkaSettings.PreTestRequestTopic
+        ];
         kafkaClient.Subscribe(topics);
         while (!stoppingToken.IsCancellationRequested)
             try
@@ -64,6 +70,17 @@ public class KafkaSubscriberWorker(
                     }
 
                     await testCaseGenerationHandler.HandleAsync(message, stoppingToken);
+                }
+                else if (topic == _kafkaSettings.PreTestRequestTopic)
+                {
+                    var message = JsonSerializer.Deserialize<PreTestRequest>(json, _jsonOptions);
+                    if (message == null)
+                    {
+                        logger.LogWarning("Failed to deserialize pre-test message");
+                        continue;
+                    }
+
+                    await preTestHandler.HandleAsync(message, stoppingToken);
                 }
             }
             catch (OperationCanceledException)

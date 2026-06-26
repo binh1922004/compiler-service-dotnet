@@ -41,7 +41,7 @@ RUN useradd -m -s /bin/bash judgeuser && \
 COPY judge.py /scripts/judge.py
 COPY test_case_generator.py /scripts/test_case_generator.py
 COPY runner.js /scripts/runner.js
-
+COPY pre_test_judge.py /scripts/pre_test_judge.py
 WORKDIR /work
 USER judgeuser
 

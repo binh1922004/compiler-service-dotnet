@@ -253,4 +253,69 @@ public class CompileService(
         var cmdDeleteFile = commandBuilder.CreateDeleteSubmissionFolderCommand(submissionRequest.Id);
         await dockerPool.ExecCmdFromContainer(containerId, cmdDeleteFile, cancellationToken);
     }
+
+    /// <inheritdoc/>
+    public async Task<PreTestResponse?> RunPreTest(PreTestRequest request, CancellationToken cancellationToken)
+    {
+        var containerId = await dockerPool.RentContainerAsync();
+        logger.LogInformation("Rented container {ContainerId} for pre-test {PreTestId}", containerId, request.Id);
+
+        try
+        {
+            // Write only the source file into the container
+            var createFilesCmd = commandBuilder.CreatePreTestSourceFileCommand(request);
+            await dockerPool.ExecCmdFromContainer(containerId!, createFilesCmd, cancellationToken);
+
+            // Run pre_test_judge.py
+            var judgeCmd = commandBuilder.CreatePreTestCommand(request);
+            var (stdout, stderr) = await dockerPool.ExecCmdFromContainerWithStderr(containerId!, judgeCmd, cancellationToken);
+            logger.LogInformation("Pre-test judge output for {PreTestId}: stdout={Stdout}, stderr={Stderr}",
+                request.Id, stdout, stderr);
+
+            PreTestResponse? response = null;
+            try
+            {
+                response = JsonSerializer.Deserialize<PreTestResponse>(stdout);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Failed to parse pre_test_judge output for {PreTestId}", request.Id);
+            }
+
+            if (response != null)
+            {
+                response.Id = request.Id;
+                response.UserId = request.UserId;
+                if (response.Status == "ERROR")
+                    response.Status = "IE";
+                return response;
+            }
+
+            return new PreTestResponse
+            {
+                Id = request.Id,
+                UserId = request.UserId,
+                Status = "IE",
+                Error = $"Failed to parse judge output.\nstdout: {stdout}\nstderr: {stderr}"
+            };
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Docker/infrastructure error for pre-test {PreTestId}", request.Id);
+            return new PreTestResponse
+            {
+                Id = request.Id,
+                UserId = request.UserId,
+                Status = "IE",
+                Error = ex.Message
+            };
+        }
+        finally
+        {
+            // Clean up submission directory
+            var deleteCmd = commandBuilder.CreateDeleteSubmissionFolderCommand(request.Id);
+            await dockerPool.ExecCmdFromContainer(containerId!, deleteCmd, cancellationToken);
+            await dockerPool.ReturnContainerAsync(containerId!, cancellationToken);
+        }
+    }
 }

@@ -63,4 +63,39 @@ public class CommandBuilder(IOptions<WorkSettings> workSettings)
         var planDir = $"{_workSettings.TestCaseDir}/{planId}";
         return $"rm -rf {planDir}";
     }
+
+    /// <summary>
+    /// Builds a Docker exec command that invokes pre_test_judge.py with the user's source file
+    /// and the input/expected strings passed as base64-encoded arguments.
+    ///
+    /// Base64 encoding avoids all shell-quoting problems (newlines, quotes, backslashes, etc.)
+    /// without creating any extra files on disk.
+    /// </summary>
+    public string CreatePreTestCommand(PreTestRequest request)
+    {
+        var extension = Constants.GetLanguageExtension(request.Language);
+        var submissionDir = $"{_workSettings.SubmissionDir}/{request.Id}";
+        var filePath = $"{submissionDir}/{request.Id}.{extension}";
+
+        // Base64-encode the input and expected output so they are safe to pass as bare shell args
+        var inputB64 = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(request.Input));
+        var expectedB64 = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(request.ExpectedOutput));
+
+        return $"python3 {_workSettings.ScriptDir}/pre_test_judge.py {filePath} " +
+               $"--input {inputB64} --expected {expectedB64} " +
+               $"{request.TimeLimit} {request.MemoryLimit}";
+    }
+
+    /// <summary>
+    /// Creates the submission directory and writes only the source file.
+    /// No input/expected files are created — those values are passed inline to the script.
+    /// </summary>
+    public string CreatePreTestSourceFileCommand(PreTestRequest request)
+    {
+        var extension = Constants.GetLanguageExtension(request.Language);
+        var submissionDir = $"{_workSettings.SubmissionDir}/{request.Id}";
+        var filePath = $"{submissionDir}/{request.Id}.{extension}";
+
+        return $"mkdir -p {submissionDir} && cat > {filePath} << 'SRCEOF'\n{request.Source}\nSRCEOF\n";
+    }
 }
