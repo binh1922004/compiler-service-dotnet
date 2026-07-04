@@ -1,3 +1,4 @@
+using CompilerService.Configuration;
 using CompilerService.Infrastructure.Docker;
 using CompilerService.Infrastructure.Storage;
 
@@ -6,7 +7,7 @@ namespace CompilerService.Hosting;
 public class DockerStartupService(
     DockerPool dockerPool,
     ILogger<DockerStartupService> logger,
-    IS3Service s3Service
+    IConfiguration configuration
     ) : IHostedService
 {
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -15,7 +16,8 @@ public class DockerStartupService(
         
         try 
         {
-            await dockerPool.InitializeAsync(3);
+            var numberOfWorkers = configuration.GetValue<int>(Constants.NumberOfWorkersSetting);
+            await dockerPool.InitializeAsync(numberOfWorkers);
         }
         catch (Exception ex)
         {

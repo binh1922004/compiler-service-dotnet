@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Text;
+using CompilerService.Configuration;
 using Docker.DotNet;
 using Docker.DotNet.Models;
 
@@ -7,7 +8,6 @@ namespace CompilerService.Infrastructure.Docker;
 
 public class DockerPool
 {
-    private const int MaxContainers = 5;
     private readonly ConcurrentQueue<string> _availableContainers;
     private readonly DockerClient _client;
     private readonly string? _image;
@@ -30,7 +30,8 @@ public class DockerPool
         _testCaseVolume = configuration["CompilerConfig:TestCaseVolume"];
 
         _availableContainers = new ConcurrentQueue<string>();
-        _semaphore = new SemaphoreSlim(MaxContainers);
+        var numberOfWorkers = configuration.GetValue<int>(Constants.NumberOfWorkersSetting);
+        _semaphore = new SemaphoreSlim(numberOfWorkers);
 
         if (os == "win")
         {
@@ -94,7 +95,7 @@ public class DockerPool
                     $"{_problemVolume}:/problems",
                     $"{_submissionVolume}:/work",
                     $"{_testCaseVolume}:/test-case"
-                ]
+                ],
             },
             Cmd = ["/bin/bash", "-c", "sleep infinity"]
         });
@@ -134,7 +135,6 @@ public class DockerPool
     public virtual async Task<(string Stdout, string Stderr)> ExecCmdFromContainerWithStderr(string containerId,
         string exeCmd, CancellationToken cancellationToken = default)
     {
-        await _semaphore.WaitAsync(cancellationToken);
         try
         {
             var execCreateResponse = await _client.Exec.ExecCreateContainerAsync(containerId,
@@ -176,9 +176,10 @@ public class DockerPool
                 exeCmd, output, error);
             return (output, error);
         }
-        finally
+        catch (Exception ex)
         {
-            _semaphore.Release();
+            _logger.LogError(ex, "Error executing command in container {ContainerId}: {Command}", containerId, exeCmd);
+            throw;
         }
     }
 }

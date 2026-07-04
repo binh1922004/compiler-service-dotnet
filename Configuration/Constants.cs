@@ -9,7 +9,9 @@ public static class Constants
 
     public const string KafkaProducerSettings = "Kafka:ProducerSettings";
     public const string KafkaConsumerSettings = "Kafka:ConsumerSettings";
+    public const string KafkaAuthenticationSettings = "Kafka:Authentication";
     public const string AwsS3Setting = "AWS:S3";
+    public const string NumberOfWorkersSetting = "CompilerConfig:NumberOfWorkers";
 
     public static string GetLanguageExtension(Language language)
     {

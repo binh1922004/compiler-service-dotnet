@@ -17,7 +17,7 @@ public class SubmissionHandler(
     {
         logger.LogInformation("Processing submission {SubmissionId} for problem {ProblemId}",
             message.Id, message.Problem.Id);
-
+        var startTime = DateTime.UtcNow;
         try
         {
             var result = await compileService.SubmitCode(message, cancellationToken);
@@ -33,6 +33,11 @@ public class SubmissionHandler(
                 Status = SubmissionStatus.IE
             };
             await kafkaClient.ProduceAsync(_kafkaSettings.ResultTopic, message.Id, errorResponse, cancellationToken);
+        }
+        finally
+        {
+            var duration = DateTime.UtcNow - startTime;
+            logger.LogInformation("Finished processing submission {SubmissionId} in {Duration}ms", message.Id, duration.TotalMilliseconds);
         }
     }
 }

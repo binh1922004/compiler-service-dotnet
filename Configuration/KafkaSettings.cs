@@ -11,3 +11,11 @@ public class KafkaSettings
     public string PreTestRequestTopic { get; set; } = "compiler.pre-test.request";
     public string PreTestResultTopic { get; set; } = "compiler.pre-test.response";
 }
+
+public class KafkaAuthentication
+{
+    public string Username { get; set; } = "";
+    public string Password { get; set; } = "";
+    public string SaslMechanism { get; set; } = "PLAIN";
+    public string SecurityProtocol { get; set; } = "SaslPlaintext";
+}

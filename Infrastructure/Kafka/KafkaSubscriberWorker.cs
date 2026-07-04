@@ -12,9 +12,8 @@ namespace CompilerService.Infrastructure.Kafka;
 /// </summary>
 public class KafkaSubscriberWorker(
     IKafkaClient kafkaClient,
-    IMessageHandler<SubmissionRequest> submissionHandler,
-    IMessageHandler<TestCasePlan> testCaseGenerationHandler,
-    IMessageHandler<PreTestRequest> preTestHandler,
+    IServiceScopeFactory serviceScopeFactory,
+    IConfiguration configuration,
     ILogger<KafkaSubscriberWorker> logger,
     IOptions<KafkaSettings> kafkaSettings)
     : BackgroundService
@@ -24,6 +23,7 @@ public class KafkaSubscriberWorker(
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         Converters = { new JsonStringEnumConverter() }
     };
+    private readonly SemaphoreSlim _concurrencyLimit = new(configuration.GetValue<int>(Constants.NumberOfWorkersSetting));
 
     private readonly KafkaSettings _kafkaSettings = kafkaSettings.Value;
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
@@ -41,6 +41,7 @@ public class KafkaSubscriberWorker(
         ];
         kafkaClient.Subscribe(topics);
         while (!stoppingToken.IsCancellationRequested)
+        {
             try
             {
                 var consumeResult = kafkaClient.Consume(stoppingToken);
@@ -51,45 +52,60 @@ public class KafkaSubscriberWorker(
                 if (topic == _kafkaSettings.SubmissionTopic)
                 {
                     var message = JsonSerializer.Deserialize<SubmissionRequest>(json, _jsonOptions);
-                    if (message == null)
-                    {
-                        logger.LogWarning("Failed to deserialize submission message");
-                        continue;
-                    }
+                    if (message == null) continue;
+                    
+                    // Wait until we have a free slot
+                    await _concurrencyLimit.WaitAsync(stoppingToken);
 
-                    // Dispatch to handler — all business logic lives there
-                    await submissionHandler.HandleAsync(message, stoppingToken);
+                    _ = Task.Run(async () =>
+                    {
+                        // 1. CREATE A BRAND NEW SCOPE FOR THIS SPECIFIC TASK
+                        using var scope = serviceScopeFactory.CreateScope();
+                        
+                        // 2. RESOLVE A FRESH HANDLER FROM THE SCOPE
+                        var handler = scope.ServiceProvider.GetRequiredService<IMessageHandler<SubmissionRequest>>();
+
+                        try
+                        {
+                            // 3. EXECUTE SAFELY
+                            await handler.HandleAsync(message, stoppingToken);
+                        }
+                        catch (Exception ex)
+                        {
+                            logger.LogError(ex, "Error handling submission");
+                        }
+                        finally
+                        {
+                            _concurrencyLimit.Release();
+                        }
+                    }, stoppingToken);
                 }
                 else if (topic == _kafkaSettings.TestCaseGenerationRequestTopic)
                 {
                     var message = JsonSerializer.Deserialize<TestCasePlan>(json, _jsonOptions);
-                    if (message == null)
-                    {
-                        logger.LogWarning("Failed to deserialize test case generation message");
-                        continue;
-                    }
+                    if (message == null) continue;
 
-                    await testCaseGenerationHandler.HandleAsync(message, stoppingToken);
+                    // Note: If test cases take a long time to generate, you should 
+                    // apply the exact same Semaphore/Task.Run/Scope pattern here!
+                    using var scope = serviceScopeFactory.CreateScope();
+                    var handler = scope.ServiceProvider.GetRequiredService<IMessageHandler<TestCasePlan>>();
+                    await handler.HandleAsync(message, stoppingToken);
                 }
                 else if (topic == _kafkaSettings.PreTestRequestTopic)
                 {
                     var message = JsonSerializer.Deserialize<PreTestRequest>(json, _jsonOptions);
-                    if (message == null)
-                    {
-                        logger.LogWarning("Failed to deserialize pre-test message");
-                        continue;
-                    }
+                    if (message == null) continue;
 
-                    await preTestHandler.HandleAsync(message, stoppingToken);
+                    using var scope = serviceScopeFactory.CreateScope();
+                    var handler = scope.ServiceProvider.GetRequiredService<IMessageHandler<PreTestRequest>>();
+                    await handler.HandleAsync(message, stoppingToken);
                 }
             }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
+            catch (OperationCanceledException) { break; }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Error in Kafka subscriber loop");
             }
+        }
     }
 }

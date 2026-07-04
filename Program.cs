@@ -15,6 +15,7 @@ var builder = Host.CreateApplicationBuilder(args);
 builder.Services.Configure<WorkSettings>(builder.Configuration.GetSection(Constants.WorkDirSetting));
 builder.Services.Configure<KafkaSettings>(builder.Configuration.GetSection(Constants.KafkaSetting));
 builder.Services.Configure<AwsS3Settings>(builder.Configuration.GetSection(Constants.AwsS3Setting));
+builder.Services.Configure<KafkaAuthentication>(builder.Configuration.GetSection(Constants.KafkaAuthenticationSettings));
 var awsS3Settings = builder.Configuration.GetSection(Constants.AwsS3Setting).Get<AwsS3Settings>();
 
 // Infrastructure

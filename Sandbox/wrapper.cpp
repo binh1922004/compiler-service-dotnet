@@ -5,26 +5,30 @@
 #include <cstring>
 #include <unistd.h>
 
-class ProgramStats {
-private:
+class ProgramStats
+{
     std::chrono::high_resolution_clock::time_point startTime;
     long long peakMemoryKB;
     long long currentMemoryKB;
 
 public:
-    ProgramStats() {
+    ProgramStats()
+    {
         startTime = std::chrono::high_resolution_clock::now();
         peakMemoryKB = 0;
         currentMemoryKB = 0;
     }
 
     // 🔴 Lấy peak memory (KB)
-    long long getPeakMemoryKB() {
+    long long getPeakMemoryKB()
+    {
         std::ifstream status("/proc/self/status");
         std::string line;
 
-        while (std::getline(status, line)) {
-            if (line.find("VmPeak:") == 0) {
+        while (std::getline(status, line))
+        {
+            if (line.find("VmPeak:") == 0)
+            {
                 std::istringstream iss(line);
                 std::string label;
                 long long value;
@@ -36,12 +40,15 @@ public:
     }
 
     // 🔴 Lấy current memory (KB)
-    long long getCurrentMemoryKB() {
+    long long getCurrentMemoryKB()
+    {
         std::ifstream status("/proc/self/status");
         std::string line;
 
-        while (std::getline(status, line)) {
-            if (line.find("VmRSS:") == 0) {
+        while (std::getline(status, line))
+        {
+            if (line.find("VmRSS:") == 0)
+            {
                 std::istringstream iss(line);
                 std::string label;
                 long long value;
@@ -53,19 +60,22 @@ public:
     }
 
     // 🔴 Lấy execution time (ms)
-    long long getExecutionTimeMs() {
+    long long getExecutionTimeMs()
+    {
         auto endTime = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
         return duration.count();
     }
 
     // 🔴 Convert KB to MB
-    double toMB(long long kb) {
+    double toMB(long long kb)
+    {
         return kb / 1024.0;
     }
 
     // 🔴 Print stats to stderr (dưới dạng JSON để dễ parse)
-    void printStats() {
+    void printStats()
+    {
         long long execTimeMs = getExecutionTimeMs();
         long long peakKB = getPeakMemoryKB();
         long long currentKB = getCurrentMemoryKB();
@@ -73,12 +83,14 @@ public:
         double currentMB = toMB(currentKB);
 
         // Output JSON to stderr
-        fprintf(stderr, "{\"execTimeMs\": %lld, \"peakMemoryKB\": %lld, \"peakMemoryMB\": %.2f, \"currentMemoryKB\": %lld, \"currentMemoryMB\": %.2f}\n",
+        fprintf(stderr,
+                "{\"execTimeMs\": %lld, \"peakMemoryKB\": %lld, \"peakMemoryMB\": %.2f, \"currentMemoryKB\": %lld, \"currentMemoryMB\": %.2f}\n",
                 execTimeMs, peakKB, peakMB, currentKB, currentMB);
     }
 
     // 🔴 Destructor - tự động in stats khi program exit
-    ~ProgramStats() {
+    ~ProgramStats()
+    {
         printStats();
     }
 };
@@ -87,7 +99,7 @@ public:
 static ProgramStats __stats;
 
 // 🔴 Optional: Function để user gọi nếu cần ok
-void printProgramStats() {
+void printProgramStats()
+{
     __stats.printStats();
 }
-

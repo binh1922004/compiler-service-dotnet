@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using CompilerService.Configuration;
 using Confluent.Kafka;
+using Microsoft.Extensions.Options;
 
 namespace CompilerService.Infrastructure.Kafka;
 
@@ -21,19 +22,70 @@ public class KafkaClient : IKafkaClient
 
     private readonly ILogger<KafkaClient> _logger;
     private readonly IProducer<string, string> _producer;
+    private readonly KafkaAuthentication _kafkaAuthentication;
 
-    public KafkaClient(IConfiguration configuration, ILogger<KafkaClient> logger)
+    public KafkaClient(IConfiguration configuration, ILogger<KafkaClient> logger, IOptions<KafkaAuthentication> kafkaAuthentication)
     {
         _logger = logger;
-
+        _kafkaAuthentication = kafkaAuthentication.Value;
         // Consumer setup
         var consumerConfig = new ConsumerConfig();
         configuration.GetSection(Constants.KafkaConsumerSettings).Bind(consumerConfig);
+        if (_kafkaAuthentication.Username != string.Empty)
+        {
+            consumerConfig.SaslUsername = _kafkaAuthentication.Username;
+            consumerConfig.SaslPassword = _kafkaAuthentication.Password;
+            switch (_kafkaAuthentication.SaslMechanism)
+            {
+                case "PLAIN":
+                    consumerConfig.SecurityProtocol = SecurityProtocol.SaslPlaintext;
+                    consumerConfig.SaslMechanism = SaslMechanism.Plain;
+                    break;
+                case "SCRAM-SHA-256":
+                    consumerConfig.SecurityProtocol = SecurityProtocol.SaslPlaintext;
+                    consumerConfig.SaslMechanism = SaslMechanism.ScramSha256;
+                    break;
+                case "SCRAM-SHA-512":
+                    consumerConfig.SecurityProtocol = SecurityProtocol.SaslPlaintext;
+                    consumerConfig.SaslMechanism = SaslMechanism.ScramSha512;
+                    break;
+                default:
+                    _logger.LogWarning("Unsupported SASL mechanism: {SaslMechanism}. Defaulting to PLAIN.", _kafkaAuthentication.SaslMechanism);
+                    consumerConfig.SecurityProtocol = SecurityProtocol.SaslPlaintext;
+                    consumerConfig.SaslMechanism = SaslMechanism.Plain;
+                    break;
+            }
+        }
         _consumer = new ConsumerBuilder<string, string>(consumerConfig).Build();
 
         // Producer setup
         var producerConfig = new ProducerConfig();
         configuration.GetSection(Constants.KafkaProducerSettings).Bind(producerConfig);
+        if (_kafkaAuthentication.Username != string.Empty)
+        {
+            producerConfig.SaslUsername = _kafkaAuthentication.Username;
+            producerConfig.SaslPassword = _kafkaAuthentication.Password;
+            switch (_kafkaAuthentication.SaslMechanism)
+            {
+                case "PLAIN":
+                    producerConfig.SecurityProtocol = SecurityProtocol.SaslPlaintext;
+                    producerConfig.SaslMechanism = SaslMechanism.Plain;
+                    break;
+                case "SCRAM-SHA-256":
+                    producerConfig.SecurityProtocol = SecurityProtocol.SaslPlaintext;
+                    producerConfig.SaslMechanism = SaslMechanism.ScramSha256;
+                    break;
+                case "SCRAM-SHA-512":
+                    producerConfig.SecurityProtocol = SecurityProtocol.SaslPlaintext;
+                    producerConfig.SaslMechanism = SaslMechanism.ScramSha512;
+                    break;
+                default:
+                    _logger.LogWarning("Unsupported SASL mechanism: {SaslMechanism}. Defaulting to PLAIN.", _kafkaAuthentication.SaslMechanism);
+                    producerConfig.SecurityProtocol = SecurityProtocol.SaslPlaintext;
+                    producerConfig.SaslMechanism = SaslMechanism.Plain;
+                    break;
+            }
+        }
         _producer = new ProducerBuilder<string, string>(producerConfig).Build();
 
         _logger.LogInformation("KafkaClient initialized");
