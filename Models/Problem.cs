@@ -10,4 +10,6 @@ public class Problem
     public int Memory { get; set; }
     public int Version { get; set; }
     public int NumberOfTestCases { get; set; }
+    [JsonPropertyName("testCaseS3Key")]
+    public string? TestCaseS3Key { get; set; }
 }

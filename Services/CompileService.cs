@@ -32,8 +32,17 @@ public class CompileService(
             var problemPath = Path.Combine(_workSettings.ProblemDir, problemVersion);
             if (!fileService.FolderExists(problemPath))
             {
-                var key = $"{submissionRequest.Problem.Id}/{problemVersion}.zip";
-                await s3Service.DownloadProblemFromS3Async(key, problemPath);
+                if (!string.IsNullOrEmpty(submissionRequest.Problem.TestCaseS3Key))
+                {
+                    // Use the fully qualified S3 key from infor-service
+                    await s3Service.DownloadProblemByFullKeyAsync(submissionRequest.Problem.TestCaseS3Key, problemPath);
+                }
+                else
+                {
+                    // Fallback: construct key using convention (backward compat)
+                    var key = $"{submissionRequest.Problem.Id}/{problemVersion}.zip";
+                    await s3Service.DownloadProblemFromS3Async(key, problemPath);
+                }
             }
 
             await CreateFile(submissionRequest, containerId!, cancellationToken);

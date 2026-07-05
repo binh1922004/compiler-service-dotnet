@@ -83,6 +83,41 @@ public class S3Service(
         logger.LogInformation("Downloaded key {key} successfully", key);
     }
 
+    public async Task DownloadProblemByFullKeyAsync(string fullKey, string rootDirectory)
+    {
+        var request = new GetObjectRequest
+        {
+            Key = fullKey,
+            BucketName = _awsS3Settings.BucketName
+        };
+
+        logger.LogInformation("Downloading full key {key} from S3", fullKey);
+
+        using var response = await client.GetObjectAsync(request);
+        await using var responseStream = response.ResponseStream;
+        using var ms = new MemoryStream();
+        await responseStream.CopyToAsync(ms);
+
+        if (!Directory.Exists(rootDirectory)) Directory.CreateDirectory(rootDirectory);
+
+        await using var zipArchive = new ZipArchive(ms, ZipArchiveMode.Read);
+
+        foreach (var entry in zipArchive.Entries)
+        {
+            var destinationPath = Path.Combine(rootDirectory, entry.FullName);
+            if (Path.GetFileName(destinationPath).Length == 0)
+            {
+                Directory.CreateDirectory(destinationPath);
+                continue;
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(destinationPath)!);
+            await entry.ExtractToFileAsync(destinationPath, true);
+        }
+
+        logger.LogInformation("Downloaded full key {key} successfully", fullKey);
+    }
+
     public async Task<string> UploadFileAsync(string filePath, string key)
     {
         var request = new PutObjectRequest()
