@@ -62,6 +62,11 @@ def set_limits(time_limit_sec, memory_limit_mb, ext):
     if ext != 'js': 
         memory_bytes = memory_limit_mb * 1024 * 1024
         resource.setrlimit(resource.RLIMIT_AS, (memory_bytes, memory_bytes))
+        try:
+            resource.setrlimit(resource.RLIMIT_STACK, (memory_bytes, memory_bytes))
+        except ValueError:
+            # Bỏ qua nếu hệ điều hành (như macOS) có hard-limit không cho phép set quá cao
+            pass
 
 def extract_clean_error(stderr, ext):
     """Trích xuất thông báo lỗi an toàn, bỏ qua đường dẫn hệ thống"""
@@ -166,7 +171,7 @@ def run_solution(solution_file, input_data, time_limit, memory_limit):
         return result.stdout, elapsed, memory_kb, "AC", None
         
     except subprocess.TimeoutExpired:
-        return None, time_limit + 0.1, 0, "TLE"
+        return None, time_limit + 0.1, 0, "TLE", None
     except Exception as e:
         return None, 0, 0, f"RTE ({str(e)})"
 
@@ -198,6 +203,8 @@ def main():
     test_results = []
     overall_status = "AC"
     overall_error_msg = ""
+    failed_test_id = None  # TRACK THE FAILED TEST CASE
+
     for tc in testcases:
         with open(tc['inp'], 'r') as f: input_data = f.read()
         with open(tc['out'], 'r') as f: expected_output = f.read()
@@ -217,7 +224,9 @@ def main():
         if status == "AC":
             passed += 1
         else:
-            if overall_status == "AC": overall_status = status
+            if overall_status == "AC": 
+                overall_status = status
+                failed_test_id = tc['num']  # RECORD THE FIRST FAILURE
             if error_msg: overall_error_msg = error_msg
             if is_icpc: break  # Chế độ ICPC: dừng ngay khi sai
 
@@ -227,8 +236,9 @@ def main():
         "total": len(testcases),
         "max_time": round(max_time, 3),
         "max_memory_mb": round(max_memory / 1024, 2),
-        "error": overall_error_msg
-#         "tests": test_results
+        "error": overall_error_msg,
+        "failed_test_id": failed_test_id,  # EXPORT FAILED TEST ID
+        "tests": test_results              # UNCOMMENTED THIS LINE
     }
     
     print(json.dumps(result, indent=2))
