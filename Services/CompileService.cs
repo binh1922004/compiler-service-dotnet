@@ -159,7 +159,7 @@ public class CompileService(
             logger.LogInformation(
                 "Test case generation succeeded for PlanId={PlanId}. TestCount={TestCount}, ZipPath={ZipPath}",
                 plan.PlanId, scriptOutput.TestCount, scriptOutput.ZipPath);
-            var s3Key = $"{_awsS3Settings.TestCasePrefix}/{planName}/test_cases.zip";
+            var s3Key = $"{_awsS3Settings.TestCasePrefix}/{plan.PlanId}/test_cases_{plan.Version}.zip";
             var s3UploadResult = await s3Service.UploadFileAsync("/app" + scriptOutput.ZipPath, s3Key);
             return new TestCaseGenerationResult
             {
@@ -167,7 +167,8 @@ public class CompileService(
                 Success = true,
                 S3Key = s3Key,
                 Version = plan.Version,
-                TestCount = scriptOutput.TestCount
+                TestCount = scriptOutput.TestCount,
+                TestCases = scriptOutput.TestCases
             };
         }
         catch (Exception ex)

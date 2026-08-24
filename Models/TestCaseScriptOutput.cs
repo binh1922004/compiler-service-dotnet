@@ -10,6 +10,8 @@ public class TestCaseScriptOutput
 
     [JsonPropertyName("testCount")] public int TestCount { get; set; }
 
+    [JsonPropertyName("testCases")] public List<TestCasePreview> TestCases { get; set; } = [];
+
     [JsonPropertyName("error")] public string? Error { get; set; }
 
     [JsonPropertyName("phase")] public string? Phase { get; set; }

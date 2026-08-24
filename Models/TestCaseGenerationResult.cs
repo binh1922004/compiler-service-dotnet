@@ -7,5 +7,6 @@ public class TestCaseGenerationResult
     public string S3Key { get; set; } = string.Empty;
     public int Version { get; set; }
     public int TestCount { get; set; }
+    public List<TestCasePreview> TestCases { get; set; } = [];
     public string? Error { get; set; }
 }

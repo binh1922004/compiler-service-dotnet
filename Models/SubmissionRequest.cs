@@ -10,4 +10,6 @@ public class SubmissionRequest
     public Problem Problem { get; set; }
     public string Source { get; set; }
     public Language Language { get; set; }
+    [JsonPropertyName("messageId")]
+    public string MessageId { get; set; }
 }

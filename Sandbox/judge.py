@@ -153,9 +153,9 @@ def run_solution(solution_file, input_data, time_limit, memory_limit):
 
         if result.returncode != 0:
             if result.returncode in [152, 158] or elapsed >= time_limit:
-                return None, elapsed, memory_kb, "TLE", None
+                return None, elapsed, memory_kb, "TLE", "Time limit"
             if result.returncode == 137:
-                return None, elapsed, memory_kb, "MLE", None
+                return None, elapsed, memory_kb, "MLE", "Memory limit"
             
             clean_msg = extract_clean_error(result.stderr, ext)
             
@@ -171,9 +171,9 @@ def run_solution(solution_file, input_data, time_limit, memory_limit):
         return result.stdout, elapsed, memory_kb, "AC", None
         
     except subprocess.TimeoutExpired:
-        return None, time_limit + 0.1, 0, "TLE", None
+        return None, time_limit + 0.1, 0, "TLE", "Time limit"
     except Exception as e:
-        return None, 0, 0, f"RTE ({str(e)})"
+        return None, 0, 0, "RTE", f"RTE ({str(e)})"
 
 def compare_output(actual, expected):
     actual_lines = [line.rstrip() for line in actual.strip().splitlines() if line.strip()]
@@ -214,9 +214,10 @@ def main():
         max_time = max(max_time, elapsed)
         max_memory = max(max_memory, memory_kb)
         
-        if error_msg: status = test_status
-        elif compare_output(actual_output, expected_output): status = "AC"
-        else: status = "WA"
+        if test_status == "AC": 
+            if compare_output(actual_output, expected_output): status = "AC"
+            else: status = "WA"
+        else: status = test_status
 
         res = {"test_id": tc['num'], "status": status, "time": round(elapsed, 3), "memory_mb": round(memory_kb/1024, 2)}
         test_results.append(res)

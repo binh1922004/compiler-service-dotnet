@@ -23,4 +23,6 @@ public class PreTestRequest
 
     /// <summary>Memory limit in MB.</summary>
     public int MemoryLimit { get; set; } = 256;
+    [JsonPropertyName("messageId")]
+    public string MessageId { get; set; }
 }

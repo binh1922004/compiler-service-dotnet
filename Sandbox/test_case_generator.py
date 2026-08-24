@@ -63,7 +63,7 @@ class BNOJTestCaseBuilder:
                     # 2. Write the input data to test.inp inside that subfolder
                     inp_path = os.path.join(tc_folder_path, "test.inp")
                     with open(inp_path, 'w') as f:
-                        f.write(tc_data + "\n")
+                        f.write(tc_data.strip())
 
                     test_id += 1
 
@@ -129,7 +129,7 @@ class BNOJTestCaseBuilder:
                     )
                 # Write stdout to the output file
                 with open(out_path, 'w') as fout:
-                    fout.write(proc.stdout)
+                    fout.write(proc.stdout.strip())
                 success_count += 1
 
             except subprocess.TimeoutExpired:
@@ -175,6 +175,32 @@ class BNOJTestCaseBuilder:
         """Counts the number of test case subfolders."""
         return len(glob.glob(os.path.join(self.testcases_dir, "test_*")))
 
+    def get_testcase_previews(self):
+        """Reads the first 100 characters of test.inp and test.out for each testcase."""
+        previews = []
+        tc_folders = sorted(glob.glob(os.path.join(self.testcases_dir, "test_*")))
+        for idx, folder in enumerate(tc_folders, start=1):
+            try:
+                folder_idx = int(folder.split("_")[-1])
+            except ValueError:
+                folder_idx = idx
+            inp_path = os.path.join(folder, "test.inp")
+            out_path = os.path.join(folder, "test.out")
+            inp_preview = ""
+            out_preview = ""
+            if os.path.exists(inp_path):
+                with open(inp_path, "r", errors="replace") as f:
+                    inp_preview = f.read(100)
+            if os.path.exists(out_path):
+                with open(out_path, "r", errors="replace") as f:
+                    out_preview = f.read(100)
+            previews.append({
+                "index": folder_idx,
+                "inputPreview": inp_preview,
+                "outputPreview": out_preview
+            })
+        return previews
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="BNOJ Testcase Generator Worker")
@@ -198,12 +224,14 @@ if __name__ == "__main__":
         builder.generate_outputs()
         zip_path = builder.package_testcases()
         test_count = builder.count_testcases()
+        test_cases = builder.get_testcase_previews()
 
         # Single JSON line on stdout for the C# caller to parse
         print(json.dumps({
             "status": "success",
             "zipPath": zip_path,
-            "testCount": test_count
+            "testCount": test_count,
+            "testCases": test_cases
         }))
 
     except Exception as e:
